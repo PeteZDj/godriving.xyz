@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { LogIn, Loader2 } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../lib/auth';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const nav = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,6 +29,31 @@ export default function Login() {
 
   return (
     <AuthShell title="Welcome back" subtitle="Log in to keep learning and climbing the leaderboard.">
+      {/* Google Sign-In */}
+      <div className="flex justify-center mb-4">
+        <GoogleLogin
+          onSuccess={async (cred) => {
+            try {
+              await loginWithGoogle(cred);
+              nav('/dashboard');
+            } catch (e: any) {
+              setErr(e.message);
+            }
+          }}
+          onError={() => setErr('Google sign-in failed. Please try again.')}
+          useOneTap
+          width="368"
+          text="signin_with"
+          shape="rectangular"
+        />
+      </div>
+
+      <div className="relative my-5 flex items-center gap-3">
+        <div className="h-px flex-1 bg-black/10" />
+        <span className="text-xs text-ink/40">or continue with email</span>
+        <div className="h-px flex-1 bg-black/10" />
+      </div>
+
       <form onSubmit={submit} className="space-y-4">
         {err && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{err}</div>}
         <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" />

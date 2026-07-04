@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import pkg from 'pg';
 import bcrypt from 'bcryptjs';
+import { OAuth2Client } from 'google-auth-library';
 
 const { Pool } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,8 +27,11 @@ try {
 }
 
 const PORT = process.env.PORT || 3009;
+const GOOGLE_CLIENT_ID = '251118085837-bdoims5qd7586f14e5rf2bvetj2nkirr.apps.googleusercontent.com';
+const gClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+
 const app = express();
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
 const pool = new Pool({
@@ -120,6 +124,19 @@ async function initDb() {
     );
   `);
 
+  // Google OAuth migrations (idempotent)
+  await q(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT`);
+  await q(`ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL`);
+  await q(`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'users_google_sub_key'
+      ) THEN
+        ALTER TABLE users ADD CONSTRAINT users_google_sub_key UNIQUE (google_sub);
+      END IF;
+    END $$;
+  `);
+
   const { rows } = await q('SELECT COUNT(*)::int AS c FROM driving_schools');
   if (rows[0].c === 0) {
     await seedSchools();
@@ -201,6 +218,27 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
 
 // ---------------- Routes ----------------
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'godriving-api', time: new Date().toISOString() }));
+
+// POST /api/auth/google — verify Google ID token, upsert user, create session
+app.post('/api/auth/google', wrap(async (req, res) => {
+  const { credential } = req.body || {};
+  if (!credential) return res.status(400).json({ error: 'credential required' });
+
+  const ticket = await gClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
+  const { sub, email, name, picture } = ticket.getPayload();
+
+  const { rows } = await q(
+    `INSERT INTO users (email, name, avatar, google_sub, role, coins)
+     VALUES ($1, $2, $3, $4, 'student', 50)
+     ON CONFLICT (google_sub) DO UPDATE
+       SET name = EXCLUDED.name, avatar = EXCLUDED.avatar
+     RETURNING *`,
+    [email, name, picture || null, sub]
+  );
+  const user = rows[0];
+  const token = await createSession(user.id);
+  res.json({ token, user: publicUser(user) });
+}));
 
 app.post('/api/auth/signup', wrap(async (req, res) => {
   let { name, email, password, country, city, role } = req.body || {};

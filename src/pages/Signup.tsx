@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { UserPlus, Loader2 } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../lib/auth';
 import { AuthShell, Field } from './Login';
 
 export default function Signup() {
-  const { signup } = useAuth();
+  const { signup, loginWithGoogle } = useAuth();
   const nav = useNavigate();
   const [form, setForm] = useState({ name: '', email: '', password: '', city: '', country: 'Kenya' });
   const [err, setErr] = useState('');
@@ -29,6 +30,30 @@ export default function Signup() {
 
   return (
     <AuthShell title="Create your account" subtitle="Free forever. Start earning XP in seconds.">
+      {/* Google Sign-Up */}
+      <div className="flex justify-center mb-4">
+        <GoogleLogin
+          onSuccess={async (cred) => {
+            try {
+              await loginWithGoogle(cred);
+              nav('/dashboard');
+            } catch (e: any) {
+              setErr(e.message);
+            }
+          }}
+          onError={() => setErr('Google sign-in failed. Please try again.')}
+          width="368"
+          text="signup_with"
+          shape="rectangular"
+        />
+      </div>
+
+      <div className="relative my-5 flex items-center gap-3">
+        <div className="h-px flex-1 bg-black/10" />
+        <span className="text-xs text-ink/40">or sign up with email</span>
+        <div className="h-px flex-1 bg-black/10" />
+      </div>
+
       <form onSubmit={submit} className="space-y-4">
         {err && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{err}</div>}
         <Field label="Full name" value={form.name} onChange={set('name')} placeholder="Jane Wanjiru" />

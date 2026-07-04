@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { api, getToken, setToken, clearToken } from './api';
+import type { CredentialResponse } from '@react-oauth/google';
 
 export interface User {
   id: number;
@@ -27,6 +28,7 @@ interface AuthCtx {
     role?: string;
   }) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (credentialResponse: CredentialResponse) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
   setUser: (u: User) => void;
@@ -72,6 +74,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserState(res.user);
   };
 
+  const loginWithGoogle: AuthCtx['loginWithGoogle'] = async (credentialResponse) => {
+    const res = await api<{ token: string; user: User }>('/auth/google', {
+      body: { credential: credentialResponse.credential },
+    });
+    setToken(res.token);
+    setUserState(res.user);
+  };
+
   const logout = () => {
     api('/auth/logout', { method: 'POST' }).catch(() => {});
     clearToken();
@@ -89,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <Ctx.Provider
-      value={{ user, loading, signup, login, logout, refresh, setUser: setUserState }}
+      value={{ user, loading, signup, login, loginWithGoogle, logout, refresh, setUser: setUserState }}
     >
       {children}
     </Ctx.Provider>
