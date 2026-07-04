@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Night Drive — GoDriving.xyz</title>
+<link rel="stylesheet" href="game.css" />
+<style>
+  body { background: #020617; }
+  .intro { background: radial-gradient(ellipse at center, #0b1224 0%, #000 100%); }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<a id="nav-back" href="lessons.html">← All lessons</a>
+
+<div id="intro" class="intro">
+  <h2>🌙 Night Drive</h2>
+  <div class="subtitle">
+    Your headlights are the only thing lighting the road. Follow the glowing checkpoints — parking lot, highway, roundabout, and back. Stay calm, scan ahead.
+  </div>
+  <div class="controls-list">
+    <div class="control-chip"><b>WASD</b> drive</div>
+    <div class="control-chip"><b>Q / E</b> indicators</div>
+    <div class="control-chip"><b>Space</b> handbrake</div>
+    <div class="control-chip"><b>R</b> reset run</div>
+  </div>
+  <div class="difficulty">
+    <button class="diff-btn" data-diff="easy">Clear night</button>
+    <button class="diff-btn selected" data-diff="medium">Misty</button>
+    <button class="diff-btn" data-diff="hard">Pitch black</button>
+  </div>
+  <button class="primary" id="start-btn">Start Driving</button>
+  <div class="secondary-link"><a href="lessons.html">← back to all lessons</a></div>
+</div>
+
+<div id="mission" class="panel" style="display:none">
+  <div class="step" id="mission-step"></div>
+  <div class="title" id="mission-title"></div>
+  <div class="desc" id="mission-desc"></div>
+  <div class="progress"><div class="progress-bar" id="mission-progress"></div></div>
+</div>
+
+<div id="minimap" class="panel" style="display:none">
+  <canvas id="minimap-canvas" width="220" height="220"></canvas>
+</div>
+
+<div id="controls" class="panel" style="display:none">
+  <h3>Controls</h3>
+  <div class="row"><span class="key">W</span> Accelerate</div>
+  <div class="row"><span class="key">S</span> Brake</div>
+  <div class="row"><span class="key">A</span>/<span class="key">D</span> Steer</div>
+  <div class="row"><span class="key">Q</span>/<span class="key">E</span> Signal L/R</div>
+  <div class="row"><span class="key">Space</span> Handbrake</div>
+  <div class="row"><span class="key">R</span> Reset</div>
+</div>
+
+<div id="hud" class="panel" style="display:none">
+  <div id="speedometer">
+    <div id="speed-value">0</div>
+    <div id="speed-unit">km/h</div>
+    <div id="gear">
+      <div>Gear: <span id="gear-value">N</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="signals" style="display:none">
+  <div class="signal" id="signal-left">◀</div>
+  <div class="signal" id="signal-right">▶</div>
+</div>
+
+<div id="score-panel" class="panel" style="display:none">
+  <div class="label">Checkpoints</div>
+  <div class="score-value" id="score-value">0/5</div>
+  <div class="meta">
+    <div>Time <span id="time-value">0s</span></div>
+    <div>Resets <span id="resets-value">0</span></div>
+  </div>
+</div>
+
+<div id="notification"></div>
+
+<div id="endscreen" class="endscreen">
+  <h2>Night drive complete!</h2>
+  <div class="summary" id="end-summary"></div>
+  <div class="final-score" id="final-score">0</div>
+  <div class="grades">
+    <div>Time<span id="end-time">0s</span></div>
+    <div>Resets<span id="end-resets">0</span></div>
+    <div>Difficulty<span id="end-diff">Misty</span></div>
+  </div>
+  <div class="actions">
+    <button class="primary" id="end-replay">Drive again</button>
+    <button class="secondary" id="end-back">← Lessons</button>
+  </div>
+</div>
+
+<script src="game-engine.js"></script>
+<script>
+'use strict';
+
+let difficulty = 'medium';
+let runStartTime = 0;
+let resets = 0;
+let cleared = 0;
+let totalCheckpoints = 5;
+
+const DIFF = {
+  easy:   { dark: 0.65, range: 480, ambient: 110, fog: 0.25, label: 'Clear night' },
+  medium: { dark: 0.82, range: 380, ambient: 80,  fog: 0.45, label: 'Misty' },
+  hard:   { dark: 0.93, range: 290, ambient: 55,  fog: 0.6,  label: 'Pitch black' },
+};
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    difficulty = btn.dataset.diff;
+  });
+});
+document.getElementById('start-btn').addEventListener('click', startCourse);
+document.getElementById('end-replay').addEventListener('click', () => {
+  document.getElementById('endscreen').classList.remove('show');
+  startCourse();
+});
+document.getElementById('end-back').addEventListener('click', () => location.href = 'lessons.html');
+
+function startCourse() {
+  cleared = 0; resets = 0;
+  runStartTime = performance.now();
+  document.getElementById('intro').classList.add('hidden');
+  ['mission','minimap','controls','hud','signals','score-panel'].forEach(id => {
+    document.getElementById(id).style.display = '';
+  });
+
+  const startSpot = GoDriving.PARK.spots[7];
+  GoDriving.init({
+    start: { x: startSpot.x + startSpot.w/2, y: startSpot.y + startSpot.h/2, heading: -Math.PI/2 },
+    zoom: 1.0,
+    parkedSpots: [0,3,5,8,10],
+    traffic: { nbCount: 4, sbCount: 4, speedRange: [55, 90], spacing: 380 },
+    onReset: () => { resets++; document.getElementById('resets-value').textContent = resets; GoDriving.resetCar(); GoDriving.notify('Reset', 'info', 800); },
+  });
+  GoDriving.rememberStart();
+  GoDriving.onPostRender(drawNight);
+  GoDriving.start();
+
+  setupMission();
+}
+
+function setupMission() {
+  const mk = (x, y, opts={}) => GoDriving.makeMarker(x, y, Object.assign({ color: '#fde047', r: 36 }, opts));
+  const markers = [
+    mk(GoDriving.PARK_ROAD.x, GoDriving.PARK_ROAD.yTop + 80, { label: '1' }),
+    mk(GoDriving.HW_CENTER_X + 150, -600, { label: '2' }),
+    mk(GoDriving.HW_CENTER_X + 100, GoDriving.HW_NORTH_Y + 250, { label: '3' }),
+    mk(GoDriving.ROUNDABOUT.x + GoDriving.RA_OUTER + 100, GoDriving.ROUNDABOUT.y, { label: '4' }),
+    mk(GoDriving.ROUNDABOUT.x + 700, GoDriving.ROUNDABOUT.y, { kind: 'finish', label: 'FINISH', color: '#fef08a', r: 50 }),
+  ];
+
+  GoDriving.setMission({
+    title: 'Drive through the night',
+    desc: 'Hit each glowing checkpoint in order. Take it easy in the dark.',
+    step: `<span class="pill">${DIFF[difficulty].label}</span> 5 checkpoints`,
+    markers,
+    onMarker(m) {
+      cleared++;
+      document.getElementById('score-value').textContent = `${cleared}/${totalCheckpoints}`;
+      if (m.kind === 'finish') finish();
+    },
+    check() { return false; },
+  });
+}
+
+function finish() {
+  const seconds = ((performance.now() - runStartTime) / 1000).toFixed(1);
+  document.getElementById('end-summary').textContent =
+    resets === 0 ? 'Smooth, calm and confident — perfect night driving!' :
+    resets <= 2 ? 'Solid run — small wobble, nothing serious.' :
+    'You made it. Try a clearer night next time.';
+  document.getElementById('final-score').textContent = cleared * 100;
+  document.getElementById('end-time').textContent = seconds + 's';
+  document.getElementById('end-resets').textContent = resets;
+  document.getElementById('end-diff').textContent = DIFF[difficulty].label;
+  document.getElementById('endscreen').classList.add('show');
+  GoDriving.audio.complete();
+}
+
+// Update timer
+setInterval(() => {
+  const el = document.getElementById('time-value');
+  if (!el || runStartTime === 0) return;
+  const s = Math.floor((performance.now() - runStartTime) / 1000);
+  el.textContent = s + 's';
+}, 250);
+
+function drawNight(ctx) {
+  const cfg = DIFF[difficulty];
+  const car = GoDriving.car;
+  const cam = GoDriving.camera;
+  const [px, py] = GoDriving.worldToScreen(car.x, car.y);
+  const range = cfg.range * cam.zoom;
+  const halfAngle = 0.55;
+  const heading = car.heading;
+
+  // Draw dark veil
+  ctx.save();
+  ctx.fillStyle = `rgba(2, 6, 23, ${cfg.dark})`;
+  ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+  // Carve out headlight cone
+  ctx.globalCompositeOperation = 'destination-out';
+  const grad = ctx.createRadialGradient(px, py, 30, px, py, range);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.65)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.arc(px, py, range, heading - halfAngle, heading + halfAngle);
+  ctx.closePath();
+  ctx.fill();
+
+  // Carve ambient glow
+  const grad2 = ctx.createRadialGradient(px, py, 5, px, py, cfg.ambient * cam.zoom);
+  grad2.addColorStop(0, 'rgba(255,255,255,0.95)');
+  grad2.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad2;
+  ctx.beginPath();
+  ctx.arc(px, py, cfg.ambient * cam.zoom, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Yellow tint over the lit area
+  const tint = ctx.createRadialGradient(px, py, 30, px, py, range);
+  tint.addColorStop(0, 'rgba(254, 240, 138, 0.16)');
+  tint.addColorStop(1, 'rgba(254, 240, 138, 0)');
+  ctx.fillStyle = tint;
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.arc(px, py, range, heading - halfAngle, heading + halfAngle);
+  ctx.closePath();
+  ctx.fill();
+
+  // Subtle blue fog vignette
+  const vignette = ctx.createRadialGradient(innerWidth/2, innerHeight/2, 80, innerWidth/2, innerHeight/2, Math.max(innerWidth, innerHeight) / 1.4);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(1, `rgba(2, 6, 23, ${cfg.fog})`);
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, innerWidth, innerHeight);
+  ctx.restore();
+
+  // Re-draw markers on top of the darkness so they always glow
+  const mission = GoDriving._mission;
+  if (mission && mission.markers) {
+    for (const m of mission.markers) GoDriving.drawMarker(m);
+  }
+
+  // Indicator arrow on top of overlay
+  if (mission && mission.markers) {
+    const next = mission.markers.find(m => !m.hit);
+    if (next) {
+      const [sx, sy] = GoDriving.worldToScreen(next.x, next.y);
+      const margin = 100;
+      if (sx < margin || sx > innerWidth - margin || sy < margin || sy > innerHeight - margin) {
+        const dx = sx - innerWidth / 2;
+        const dy = sy - innerHeight / 2;
+        const ang = Math.atan2(dy, dx);
+        const r = Math.min(innerWidth, innerHeight) / 2 - 110;
+        const ix = innerWidth / 2 + Math.cos(ang) * r;
+        const iy = innerHeight / 2 + Math.sin(ang) * r;
+        ctx.save();
+        ctx.translate(ix, iy);
+        ctx.rotate(ang);
+        ctx.fillStyle = '#fde047';
+        ctx.shadowColor = '#fde047'; ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(-26, -14); ctx.lineTo(-16, 0); ctx.lineTo(-26, 14);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+}
+</script>
+</body>
+</html>

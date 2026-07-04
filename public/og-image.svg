@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8f2fb"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <circle cx="1050" cy="120" r="260" fill="#0071bc" opacity="0.06"/>
+  <circle cx="150" cy="560" r="220" fill="#4caf50" opacity="0.08"/>
+  <g transform="translate(90,150)">
+    <rect x="0" y="0" width="70" height="70" rx="18" fill="#0071bc"/>
+    <path d="M15 48l5-18a6 6 0 0 1 5.8-4.5h18.4A6 6 0 0 1 50 30l5 18" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    <rect x="12" y="46" width="46" height="13" rx="4" fill="#fff"/>
+    <text x="90" y="52" font-family="Poppins,Arial" font-weight="800" font-size="48" fill="#1a1a1a">Go<tspan fill="#4caf50">Driving</tspan></text>
+  </g>
+  <text x="90" y="330" font-family="Poppins,Arial" font-weight="800" font-size="76" fill="#1a1a1a">Learn to drive</text>
+  <text x="90" y="410" font-family="Poppins,Arial" font-weight="800" font-size="76" fill="#0071bc">by playing.</text>
+  <text x="90" y="480" font-family="Open Sans,Arial" font-size="32" fill="#5b6875">Master road signs &amp; the highway code. Match with driving schools.</text>
+  <g transform="translate(760,250)">
+    <polygon points="90,0 180,168 0,168" fill="#ffce00" stroke="#111" stroke-width="9" stroke-linejoin="round"/>
+    <circle cx="90" cy="70" r="12" fill="#111"/>
+    <path d="M82 86 h16 l10 40 h-12 l-6 -24 -6 24 h-12z" fill="#111"/>
+  </g>
+</svg>

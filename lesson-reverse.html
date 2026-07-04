@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Three-Point Turn — GoDriving.xyz</title>
+<link rel="stylesheet" href="game.css" />
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<a id="nav-back" href="lessons.html">← All lessons</a>
+
+<div id="intro" class="intro">
+  <h2>↺ Three-Point Turn</h2>
+  <div class="subtitle">
+    The road ahead is closed. Use forward, reverse and steering to turn the car around inside the cone-marked area. The fewer movements you use, the better your score.
+  </div>
+  <div class="controls-list">
+    <div class="control-chip"><b>W</b> forward</div>
+    <div class="control-chip"><b>S</b> reverse</div>
+    <div class="control-chip"><b>A / D</b> steer</div>
+    <div class="control-chip"><b>R</b> reset</div>
+  </div>
+  <div class="difficulty">
+    <button class="diff-btn" data-diff="easy">Easy (wide)</button>
+    <button class="diff-btn selected" data-diff="medium">Medium</button>
+    <button class="diff-btn" data-diff="hard">Hard (tight)</button>
+  </div>
+  <button class="primary" id="start-btn">Begin Manoeuvre</button>
+  <div class="secondary-link"><a href="lessons.html">← back to all lessons</a></div>
+</div>
+
+<div id="mission" class="panel" style="display:none">
+  <div class="step" id="mission-step"></div>
+  <div class="title" id="mission-title"></div>
+  <div class="desc" id="mission-desc"></div>
+  <div class="progress"><div class="progress-bar" id="mission-progress"></div></div>
+</div>
+
+<div id="minimap" class="panel" style="display:none">
+  <canvas id="minimap-canvas" width="220" height="220"></canvas>
+</div>
+
+<div id="controls" class="panel" style="display:none">
+  <h3>Controls</h3>
+  <div class="row"><span class="key">W</span> Forward</div>
+  <div class="row"><span class="key">S</span> Reverse</div>
+  <div class="row"><span class="key">A</span>/<span class="key">D</span> Steer</div>
+  <div class="row"><span class="key">Space</span> Handbrake</div>
+  <div class="row"><span class="key">R</span> Reset</div>
+</div>
+
+<div id="hud" class="panel" style="display:none">
+  <div id="speedometer">
+    <div id="speed-value">0</div>
+    <div id="speed-unit">km/h</div>
+    <div id="gear">
+      <div>Gear: <span id="gear-value">N</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="signals" style="display:none">
+  <div class="signal" id="signal-left">◀</div>
+  <div class="signal" id="signal-right">▶</div>
+</div>
+
+<div id="score-panel" class="panel" style="display:none">
+  <div class="label">Movements</div>
+  <div class="score-value" id="score-value">0</div>
+  <div class="meta">
+    <div>Heading <span id="hdg-value">0°</span></div>
+    <div>Cones hit <span id="hit-value">0</span></div>
+  </div>
+</div>
+
+<div id="notification"></div>
+
+<div id="endscreen" class="endscreen">
+  <h2>Three-Point Turn Complete!</h2>
+  <div class="summary" id="end-summary"></div>
+  <div class="final-score" id="final-score">0</div>
+  <div class="grades">
+    <div>Movements<span id="end-moves">0</span></div>
+    <div>Cones hit<span id="end-cones">0</span></div>
+    <div>Difficulty<span id="end-diff">Medium</span></div>
+  </div>
+  <div class="actions">
+    <button class="primary" id="end-replay">Try Again</button>
+    <button class="secondary" id="end-back">← Lessons</button>
+  </div>
+</div>
+
+<script src="game-engine.js"></script>
+<script>
+'use strict';
+
+let difficulty = 'medium';
+let cones = [];
+let movements = 0;
+let lastDir = 0;
+let conesHit = 0;
+let startHeading = 0;
+let completed = false;
+
+const DIFF = {
+  easy:   { width: 240, length: 320, label: 'Easy' },
+  medium: { width: 200, length: 280, label: 'Medium' },
+  hard:   { width: 170, length: 240, label: 'Hard' },
+};
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    difficulty = btn.dataset.diff;
+  });
+});
+document.getElementById('start-btn').addEventListener('click', startCourse);
+document.getElementById('end-replay').addEventListener('click', () => {
+  document.getElementById('endscreen').classList.remove('show');
+  startCourse();
+});
+document.getElementById('end-back').addEventListener('click', () => location.href = 'lessons.html');
+
+function startCourse() {
+  movements = 0; lastDir = 0; conesHit = 0; completed = false;
+  document.getElementById('intro').classList.add('hidden');
+  ['mission','minimap','controls','hud','signals','score-panel'].forEach(id => {
+    document.getElementById(id).style.display = '';
+  });
+
+  // Use east side road, far from roundabout
+  const sideRoad = GoDriving.SIDE_ROADS[0]; // dir 'e'
+  const startX = sideRoad.x2 - 200;
+  const startY = sideRoad.y1;
+  startHeading = 0; // facing east
+
+  GoDriving.init({
+    start: { x: startX, y: startY, heading: startHeading },
+    zoom: 1.15,
+    parkedSpots: [0,3,5,8,10],
+    traffic: false,
+    onReset: () => resetRound(),
+  });
+  GoDriving.rememberStart();
+  // Build cones
+  buildCones(startX, startY);
+  GoDriving.onUpdate(perFrame);
+  GoDriving.onDrawObjects(drawCones);
+  GoDriving.onPostRender(drawTurnArea);
+  GoDriving.start();
+
+  GoDriving.setMission({
+    title: '↺ Make a three-point turn',
+    desc: 'Use the cone-marked area to turn the car around so it faces back the way you came.',
+    step: `<span class="pill">${DIFF[difficulty].label}</span> single round`,
+    markers: [],
+    check() { return false; },
+  });
+}
+
+function buildCones(cx, cy) {
+  cones = [];
+  const w = DIFF[difficulty].width;   // road width
+  const l = DIFF[difficulty].length;  // length of turn area
+  // Forward cone barrier (east of player)
+  for (let i = -w/2; i <= w/2; i += 30) {
+    cones.push({ x: cx + l/2, y: cy + i, hit: false });
+  }
+  // Backward cone barrier (west of player, behind start)
+  for (let i = -w/2; i <= w/2; i += 30) {
+    cones.push({ x: cx - l/2, y: cy + i, hit: false });
+  }
+  // Side boundaries (north and south edges of road)
+  for (let i = -l/2 + 30; i < l/2; i += 30) {
+    cones.push({ x: cx + i, y: cy - w/2, hit: false });
+    cones.push({ x: cx + i, y: cy + w/2, hit: false });
+  }
+}
+
+function perFrame(dt) {
+  const c = GoDriving.car;
+  // Track direction changes (movement count)
+  const sp = c.speed;
+  const dir = sp > 8 ? 1 : sp < -8 ? -1 : 0;
+  if (lastDir !== 0 && dir !== 0 && dir !== lastDir) {
+    movements++;
+    document.getElementById('score-value').textContent = movements;
+  }
+  if (dir !== 0) lastDir = dir;
+
+  // Cone collisions
+  for (const co of cones) {
+    if (co.hit) continue;
+    if (GoDriving.dist(c.x, c.y, co.x, co.y) < 26) {
+      co.hit = true;
+      conesHit++;
+      document.getElementById('hit-value').textContent = conesHit;
+      GoDriving.audio.buzz();
+      GoDriving.notify('Cone hit!', 'fail', 700);
+      // Tiny speed knock
+      c.speed *= 0.5;
+    }
+  }
+
+  // Heading display
+  const deg = Math.round(((c.heading * 180 / Math.PI) % 360 + 360) % 360);
+  document.getElementById('hdg-value').textContent = deg + '°';
+
+  // Completion: heading is opposite to start (within 25°) AND nearly stopped
+  if (!completed) {
+    const da = Math.abs(GoDriving.norm(c.heading - (startHeading + Math.PI)));
+    if (da < 0.45 && Math.abs(c.speed) < 6 && movements >= 1) {
+      completeRound();
+    }
+  }
+}
+
+function completeRound() {
+  completed = true;
+  // Score: base 100, -10 per movement above 3, -15 per cone hit
+  let pts = Math.max(0, 100 - Math.max(0, (movements - 3) * 10) - conesHit * 15);
+  GoDriving.notify(`Three-point turn complete!  +${pts} pts`, 'success', 2200);
+  GoDriving.audio.complete();
+  setTimeout(() => showEndScreen(pts), 2300);
+}
+
+function resetRound() {
+  movements = 0; lastDir = 0; conesHit = 0; completed = false;
+  cones.forEach(c => c.hit = false);
+  GoDriving.resetCar();
+  document.getElementById('score-value').textContent = 0;
+  document.getElementById('hit-value').textContent = 0;
+  GoDriving.notify('Reset', 'info', 800);
+}
+
+function drawCones(ctx) {
+  for (const co of cones) GoDriving.drawCone(co);
+}
+
+function drawTurnArea(ctx) {
+  // Outline the turn area in subtle red
+  const c = GoDriving.car;
+  // Use start position center for the bounding box
+  const sideRoad = GoDriving.SIDE_ROADS[0];
+  const cx = sideRoad.x2 - 200;
+  const cy = sideRoad.y1;
+  const w = DIFF[difficulty].width;
+  const l = DIFF[difficulty].length;
+  const [x1, y1] = GoDriving.worldToScreen(cx - l/2, cy - w/2);
+  const [x2, y2] = GoDriving.worldToScreen(cx + l/2, cy + w/2);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+  ctx.lineWidth = 2 * GoDriving.camera.zoom;
+  ctx.setLineDash([8 * GoDriving.camera.zoom, 6 * GoDriving.camera.zoom]);
+  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  ctx.setLineDash([]);
+  // "ROAD CLOSED" sign east of barrier
+  const [sx, sy] = GoDriving.worldToScreen(cx + l/2 + 40, cy);
+  const z = GoDriving.camera.zoom;
+  const sw = 90 * z, sh = 50 * z;
+  ctx.fillStyle = '#dc2626';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3 * z;
+  GoDriving.roundRect(ctx, sx - sw/2, sy - sh/2, sw, sh, 6 * z);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold ' + (12 * z).toFixed(1) + 'px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('ROAD', sx, sy - 8 * z);
+  ctx.fillText('CLOSED', sx, sy + 8 * z);
+  ctx.restore();
+}
+
+function showEndScreen(pts) {
+  document.getElementById('end-summary').textContent =
+    movements <= 3 && conesHit === 0 ? 'Textbook three-point turn!' :
+    movements <= 5 && conesHit <= 2 ? 'Good effort, a bit of practice will tighten it up.' :
+    'A bit messy — try again with the wide setting.';
+  document.getElementById('final-score').textContent = pts;
+  document.getElementById('end-moves').textContent = movements;
+  document.getElementById('end-cones').textContent = conesHit;
+  document.getElementById('end-diff').textContent = DIFF[difficulty].label;
+  document.getElementById('endscreen').classList.add('show');
+}
+</script>
+</body>
+</html>

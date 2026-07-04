@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Roundabout Master — GoDriving.xyz</title>
+<link rel="stylesheet" href="game.css" />
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<a id="nav-back" href="lessons.html">← All lessons</a>
+
+<div id="intro" class="intro">
+  <h2>🔄 Roundabout Master</h2>
+  <div class="subtitle">
+    Four rounds. Each round the instructor calls out a different exit. Approach the roundabout, signal, take the correct exit. Wrong exit means a retry — and a score penalty.
+  </div>
+  <div class="controls-list">
+    <div class="control-chip"><b>WASD</b> drive</div>
+    <div class="control-chip"><b>Q / E</b> signals</div>
+    <div class="control-chip"><b>R</b> reset</div>
+  </div>
+  <div class="difficulty">
+    <button class="diff-btn" data-diff="easy">Easy (no traffic)</button>
+    <button class="diff-btn selected" data-diff="medium">Medium</button>
+    <button class="diff-btn" data-diff="hard">Hard (busy)</button>
+  </div>
+  <button class="primary" id="start-btn">Start Round 1</button>
+  <div class="secondary-link"><a href="lessons.html">← back to all lessons</a></div>
+</div>
+
+<div id="mission" class="panel" style="display:none">
+  <div class="step" id="mission-step"></div>
+  <div class="title" id="mission-title"></div>
+  <div class="desc" id="mission-desc"></div>
+  <div class="progress"><div class="progress-bar" id="mission-progress"></div></div>
+</div>
+
+<div id="minimap" class="panel" style="display:none">
+  <canvas id="minimap-canvas" width="220" height="220"></canvas>
+</div>
+
+<div id="controls" class="panel" style="display:none">
+  <h3>Controls</h3>
+  <div class="row"><span class="key">W</span> Accelerate</div>
+  <div class="row"><span class="key">S</span> Brake</div>
+  <div class="row"><span class="key">A</span>/<span class="key">D</span> Steer</div>
+  <div class="row"><span class="key">Q</span>/<span class="key">E</span> Signal L/R</div>
+  <div class="row"><span class="key">Space</span> Handbrake</div>
+  <div class="row"><span class="key">R</span> Reset round</div>
+</div>
+
+<div id="hud" class="panel" style="display:none">
+  <div id="speedometer">
+    <div id="speed-value">0</div>
+    <div id="speed-unit">km/h</div>
+    <div id="gear">
+      <div>Gear: <span id="gear-value">N</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="signals" style="display:none">
+  <div class="signal" id="signal-left">◀</div>
+  <div class="signal" id="signal-right">▶</div>
+</div>
+
+<div id="score-panel" class="panel" style="display:none">
+  <div class="label">Score</div>
+  <div class="score-value" id="score-value">0</div>
+  <div class="meta">
+    <div>Round <span id="round-value">1/4</span></div>
+    <div>Hits <span id="hits-value">0/4</span></div>
+  </div>
+</div>
+
+<div id="notification"></div>
+
+<div id="endscreen" class="endscreen">
+  <h2 id="end-title">Roundabout Master!</h2>
+  <div class="summary" id="end-summary"></div>
+  <div class="final-score" id="final-score">0</div>
+  <div class="grades">
+    <div>Correct exits<span id="end-correct">0/4</span></div>
+    <div>Wrong attempts<span id="end-wrong">0</span></div>
+    <div>Difficulty<span id="end-diff">Medium</span></div>
+  </div>
+  <div class="actions">
+    <button class="primary" id="end-replay">Try Again</button>
+    <button class="secondary" id="end-back">← Lessons</button>
+  </div>
+</div>
+
+<script src="game-engine.js"></script>
+<script>
+'use strict';
+
+const TOTAL_ROUNDS = 4;
+let difficulty = 'medium';
+let roundIdx = 0;
+let totalScore = 0;
+let correctCount = 0;
+let wrongAttempts = 0;
+let targetExit = 1;
+let state = 'idle';        // idle | approaching | in-roundabout | judged
+let exitOrder = [];
+
+const DIFF = {
+  easy:   { traffic: false, label: 'Easy' },
+  medium: { traffic: { nbCount: 4, sbCount: 4, speedRange: [55, 90], spacing: 380 }, label: 'Medium' },
+  hard:   { traffic: { nbCount: 8, sbCount: 8, speedRange: [80, 120], spacing: 240 }, label: 'Hard' },
+};
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    difficulty = btn.dataset.diff;
+  });
+});
+document.getElementById('start-btn').addEventListener('click', startCourse);
+document.getElementById('end-replay').addEventListener('click', () => {
+  document.getElementById('endscreen').classList.remove('show');
+  startCourse();
+});
+document.getElementById('end-back').addEventListener('click', () => location.href = 'lessons.html');
+
+function shuffled(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function startCourse() {
+  totalScore = 0;
+  correctCount = 0;
+  wrongAttempts = 0;
+  roundIdx = 0;
+  exitOrder = shuffled([1,2,3,4]);
+  document.getElementById('intro').classList.add('hidden');
+  ['mission','minimap','controls','hud','signals','score-panel'].forEach(id => {
+    document.getElementById(id).style.display = '';
+  });
+
+  GoDriving.init({
+    start: { x: GoDriving.HW_CENTER_X + 120, y: GoDriving.HW_SOUTH_Y - 80, heading: -Math.PI/2 },
+    zoom: 0.95,
+    parkedSpots: [0,3,5,8,10],
+    traffic: DIFF[difficulty].traffic,
+    onReset: () => resetRound(),
+  });
+  GoDriving.rememberStart();
+
+  // Custom drawing: target exit highlight on central island
+  GoDriving.onPreRender(drawTargetCallout);
+
+  GoDriving.start();
+  nextRound();
+}
+
+function nextRound() {
+  roundIdx++;
+  if (roundIdx > TOTAL_ROUNDS) { showEndScreen(); return; }
+  targetExit = exitOrder[roundIdx - 1];
+  state = 'approaching';
+  resetCarToStart();
+  setupMission();
+  document.getElementById('round-value').textContent = `${roundIdx}/${TOTAL_ROUNDS}`;
+  document.getElementById('hits-value').textContent = `${correctCount}/${TOTAL_ROUNDS}`;
+}
+
+function resetCarToStart() {
+  GoDriving.resetCar();
+  GoDriving.car.signalLeft = false;
+  GoDriving.car.signalRight = false;
+}
+
+function exitInfo(id) {
+  return GoDriving.ROUNDABOUT.exits.find(e => e.id === id);
+}
+function exitMarker(id) {
+  const e = exitInfo(id);
+  const a = e.angle * Math.PI / 180;
+  const r = GoDriving.RA_OUTER + 130;
+  return {
+    x: GoDriving.ROUNDABOUT.x + Math.cos(a) * r,
+    y: GoDriving.ROUNDABOUT.y + Math.sin(a) * r,
+    a, r,
+  };
+}
+
+function setupMission() {
+  const e = exitInfo(targetExit);
+  const m = exitMarker(targetExit);
+
+  // Approach checkpoint south of roundabout, then a finish marker past target exit
+  GoDriving.setMission({
+    title: `Round ${roundIdx}: Take Exit ${targetExit} (${e.name})`,
+    desc: `Drive north, signal ${targetExit === 4 ? '➡ continue straight' : (targetExit === 1 ? '➡ right at exit 1' : '➡ left for exits 2/3')} and leave at the ${e.name.toLowerCase()} exit.`,
+    step: `<span class="pill">Round ${roundIdx} of ${TOTAL_ROUNDS}</span> Difficulty: ${DIFF[difficulty].label}`,
+    markers: [
+      GoDriving.makeMarker(GoDriving.HW_CENTER_X + 100, GoDriving.HW_NORTH_Y + 350, { color: '#38bdf8', label: 'APPROACH' }),
+      GoDriving.makeMarker(m.x, m.y, { kind: 'finish', color: '#fbbf24', label: `EXIT ${targetExit}`, r: 50 }),
+    ],
+    onMarker(mk) {
+      if (mk.kind === 'finish') judgeRound();
+    },
+    check() { return false; }, // we control completion via judgeRound
+  });
+}
+
+function judgeRound() {
+  if (state === 'judged') return;
+  state = 'judged';
+  const c = GoDriving.car;
+  const e = exitInfo(targetExit);
+  const a = e.angle * Math.PI / 180;
+  // Check car's angular position near target exit
+  const dx = c.x - GoDriving.ROUNDABOUT.x;
+  const dy = c.y - GoDriving.ROUNDABOUT.y;
+  const carAngle = Math.atan2(dy, dx);
+  const da = Math.abs(GoDriving.norm(carAngle - a));
+  const correct = da < Math.PI / 4;
+  if (correct) {
+    correctCount++;
+    // Score: 100 base + signal bonus
+    let score = 100;
+    // Bonus for signalling correctly: left for exits 2/3, right for exit 1, off for exit 4
+    const expectedSignal = targetExit === 1 ? 'right' : (targetExit === 4 ? 'none' : 'left');
+    if ((expectedSignal === 'left' && c.signalLeft) ||
+        (expectedSignal === 'right' && c.signalRight) ||
+        (expectedSignal === 'none' && !c.signalLeft && !c.signalRight)) {
+      score += 25;
+    }
+    totalScore += score;
+    document.getElementById('score-value').textContent = totalScore;
+    document.getElementById('hits-value').textContent = `${correctCount}/${TOTAL_ROUNDS}`;
+    GoDriving.notify(`Exit ${targetExit} ✓  +${score} pts`, 'success', 1700);
+    GoDriving.audio.complete();
+    setTimeout(() => nextRound(), 1900);
+  } else {
+    wrongAttempts++;
+    GoDriving.notify(`Wrong exit. Resetting…`, 'fail', 1800);
+    GoDriving.audio.fail();
+    setTimeout(() => {
+      state = 'approaching';
+      setupMission();
+      resetCarToStart();
+    }, 1600);
+  }
+}
+
+function resetRound() {
+  resetCarToStart();
+  state = 'approaching';
+  setupMission();
+  GoDriving.notify('Round reset', 'info', 1000);
+}
+
+// Draw a glowing call-out arrow over target exit on the central island
+function drawTargetCallout(ctx) {
+  const e = exitInfo(targetExit); if (!e) return;
+  const a = e.angle * Math.PI / 180;
+  const cx = GoDriving.ROUNDABOUT.x;
+  const cy = GoDriving.ROUNDABOUT.y;
+  // Big arrow on island pointing to exit
+  const ax = cx + Math.cos(a) * (GoDriving.RA_INNER * 0.45);
+  const ay = cy + Math.sin(a) * (GoDriving.RA_INNER * 0.45);
+  const [sx, sy] = GoDriving.worldToScreen(ax, ay);
+  const z = GoDriving.camera.zoom;
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(a + Math.PI / 2);
+  ctx.scale(z, z);
+  const pulse = 1 + Math.sin(performance.now() / 200) * 0.1;
+  ctx.fillStyle = '#fbbf24';
+  ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 18;
+  ctx.beginPath();
+  ctx.moveTo(0, -34 * pulse);
+  ctx.lineTo(20, 8); ctx.lineTo(8, 8);
+  ctx.lineTo(8, 34); ctx.lineTo(-8, 34); ctx.lineTo(-8, 8);
+  ctx.lineTo(-20, 8);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // Big EXIT label
+  const lx = cx + Math.cos(a) * (GoDriving.RA_INNER * 0.05);
+  const ly = cy + Math.sin(a) * (GoDriving.RA_INNER * 0.05);
+  const [tx, ty] = GoDriving.worldToScreen(lx, ly);
+  ctx.save();
+  ctx.font = 'bold ' + (32 * z).toFixed(1) + 'px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#000'; ctx.shadowBlur = 8;
+  ctx.fillStyle = '#fff';
+  ctx.fillText('EXIT ' + targetExit, tx, ty);
+  ctx.restore();
+}
+
+function showEndScreen() {
+  const grade = correctCount === 4 ? 'Perfect! All four exits nailed.'
+              : correctCount >= 3 ? 'Great work — almost flawless.'
+              : correctCount >= 2 ? 'Half-way there. Try again?'
+              : 'Keep practising — focus on the call-out arrow.';
+  document.getElementById('end-summary').textContent = grade;
+  document.getElementById('final-score').textContent = totalScore;
+  document.getElementById('end-correct').textContent = `${correctCount}/${TOTAL_ROUNDS}`;
+  document.getElementById('end-wrong').textContent = wrongAttempts;
+  document.getElementById('end-diff').textContent = DIFF[difficulty].label;
+  document.getElementById('endscreen').classList.add('show');
+  GoDriving.audio.complete();
+}
+</script>
+</body>
+</html>

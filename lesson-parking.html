@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Parking Practice — GoDriving.xyz</title>
+<link rel="stylesheet" href="game.css" />
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<a id="nav-back" href="lessons.html">← All lessons</a>
+
+<div id="intro" class="intro">
+  <h2>🅿️ Parking Practice</h2>
+  <div class="subtitle">Five rounds. Each round picks a random parking spot. Drive in, line up straight, and come to a complete stop. The cleaner you park, the higher your score.</div>
+  <div class="controls-list">
+    <div class="control-chip"><b>WASD</b> drive</div>
+    <div class="control-chip"><b>Space</b> handbrake</div>
+    <div class="control-chip"><b>R</b> reset round</div>
+  </div>
+  <div class="difficulty">
+    <button class="diff-btn" data-diff="easy">Easy</button>
+    <button class="diff-btn selected" data-diff="medium">Medium</button>
+    <button class="diff-btn" data-diff="hard">Hard</button>
+  </div>
+  <button class="primary" id="start-btn">Start Round 1</button>
+  <div class="secondary-link"><a href="lessons.html">← back to all lessons</a></div>
+</div>
+
+<div id="mission" class="panel" style="display:none">
+  <div class="step" id="mission-step"></div>
+  <div class="title" id="mission-title">Park here</div>
+  <div class="desc" id="mission-desc"></div>
+  <div class="progress"><div class="progress-bar" id="mission-progress"></div></div>
+</div>
+
+<div id="minimap" class="panel" style="display:none">
+  <canvas id="minimap-canvas" width="220" height="220"></canvas>
+</div>
+
+<div id="controls" class="panel" style="display:none">
+  <h3>Controls</h3>
+  <div class="row"><span class="key">W</span> Accelerate</div>
+  <div class="row"><span class="key">S</span> Brake / Reverse</div>
+  <div class="row"><span class="key">A</span>/<span class="key">D</span> Steer</div>
+  <div class="row"><span class="key">Space</span> Handbrake</div>
+  <div class="row"><span class="key">R</span> Reset round</div>
+  <div class="row"><span class="key">M</span> Mute</div>
+</div>
+
+<div id="hud" class="panel" style="display:none">
+  <div id="speedometer">
+    <div id="speed-value">0</div>
+    <div id="speed-unit">km/h</div>
+    <div id="gear">
+      <div>Gear: <span id="gear-value">N</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="signals" style="display:none">
+  <div class="signal" id="signal-left">◀</div>
+  <div class="signal" id="signal-right">▶</div>
+</div>
+
+<div id="score-panel" class="panel" style="display:none">
+  <div class="label">Score</div>
+  <div class="score-value" id="score-value">0</div>
+  <div class="meta">
+    <div>Round <span id="round-value">1/5</span></div>
+    <div>Best <span id="best-value">0%</span></div>
+  </div>
+</div>
+
+<div id="notification"></div>
+
+<div id="endscreen" class="endscreen">
+  <h2 id="end-title">Course complete!</h2>
+  <div class="summary" id="end-summary"></div>
+  <div class="final-score" id="final-score">0</div>
+  <div class="grades">
+    <div>Best Round<span id="end-best">0</span></div>
+    <div>Total Rounds<span id="end-rounds">5</span></div>
+    <div>Difficulty<span id="end-diff">Medium</span></div>
+  </div>
+  <div class="actions">
+    <button class="primary" id="end-replay">Try Again</button>
+    <button class="secondary" id="end-back">← Lessons</button>
+  </div>
+</div>
+
+<script src="game-engine.js"></script>
+<script>
+'use strict';
+
+const TOTAL_ROUNDS = 5;
+let difficulty = 'medium';
+let currentRound = 0;
+let totalScore = 0;
+let bestRound = 0;
+let roundStartedAt = 0;
+let targetSpotIdx = 0;
+let parkedHold = 0;
+let courseCorrections = 0;
+let lastDirection = 0;     // -1 / 0 / +1 sign of speed last frame
+let courseLogged = false;
+
+// Difficulty config
+const DIFF = {
+  easy:   { dist: 80,  parkedSpots: [0,3,5,8,10],          coachMs: 700, label: 'Easy' },
+  medium: { dist: 130, parkedSpots: [0,1,3,5,6,8,10,11],   coachMs: 1100, label: 'Medium' },
+  hard:   { dist: 180, parkedSpots: [0,1,2,3,5,6,7,8,10,11],coachMs: 1500, label: 'Hard' },
+};
+
+// Difficulty selector
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    difficulty = btn.dataset.diff;
+  });
+});
+
+document.getElementById('start-btn').addEventListener('click', startCourse);
+document.getElementById('end-replay').addEventListener('click', () => {
+  document.getElementById('endscreen').classList.remove('show');
+  startCourse();
+});
+document.getElementById('end-back').addEventListener('click', () => location.href = 'lessons.html');
+
+function pickSpotFar(occupied) {
+  // Pick a free spot far from the player's start, plus respecting difficulty distance
+  const startX = GoDriving.PARK.spots[GoDriving.PARK.spots.length - 1].x;
+  const startY = GoDriving.PARK.spots[GoDriving.PARK.spots.length - 1].y;
+  const free = [];
+  for (let i = 0; i < GoDriving.PARK.spots.length; i++) {
+    if (!occupied.includes(i)) free.push(i);
+  }
+  // Sort by distance from current car
+  free.sort((a, b) => {
+    const sa = GoDriving.PARK.spots[a], sb = GoDriving.PARK.spots[b];
+    const da = GoDriving.dist(GoDriving.car.x, GoDriving.car.y, sa.x + sa.w/2, sa.y + sa.h/2);
+    const db = GoDriving.dist(GoDriving.car.x, GoDriving.car.y, sb.x + sb.w/2, sb.y + sb.h/2);
+    return db - da; // farthest first
+  });
+  // Random pick from top 3 farthest
+  return free[Math.floor(Math.random() * Math.min(3, free.length))];
+}
+
+function startCourse() {
+  totalScore = 0;
+  bestRound = 0;
+  currentRound = 0;
+  document.getElementById('intro').classList.add('hidden');
+  ['mission','minimap','controls','hud','signals','score-panel'].forEach(id => {
+    document.getElementById(id).style.display = '';
+  });
+  // Init engine
+  const startSpot = GoDriving.PARK.spots[7]; // bottom row col 1
+  GoDriving.init({
+    start: {
+      x: startSpot.x + startSpot.w/2,
+      y: startSpot.y + startSpot.h/2,
+      heading: -Math.PI/2,
+    },
+    zoom: 1.05,
+    parkedSpots: DIFF[difficulty].parkedSpots,
+    traffic: false,
+    onReset: () => resetRound(),
+  });
+  GoDriving.rememberStart();
+  GoDriving.start();
+  nextRound();
+}
+
+function nextRound() {
+  currentRound++;
+  if (currentRound > TOTAL_ROUNDS) {
+    showEndScreen();
+    return;
+  }
+  // Pick a target spot that isn't occupied AND isn't the player's start area
+  const occupied = DIFF[difficulty].parkedSpots.slice();
+  // Mark spot 7 (start) as off-limits
+  if (!occupied.includes(7)) occupied.push(7);
+  // Also exclude the previous target if we have one
+  if (targetSpotIdx != null) occupied.push(targetSpotIdx);
+
+  targetSpotIdx = pickSpotFar(occupied) ?? 4;
+
+  // Highlight target
+  GoDriving.PARK.spots.forEach(s => s.highlight = false);
+  GoDriving.PARK.spots[targetSpotIdx].highlight = true;
+
+  // Setup mission
+  parkedHold = 0;
+  courseCorrections = 0;
+  lastDirection = 0;
+  courseLogged = false;
+  roundStartedAt = performance.now();
+  const t = GoDriving.PARK.spots[targetSpotIdx];
+  GoDriving.setMission({
+    title: `Round ${currentRound}: park in the highlighted spot`,
+    desc: 'Pull in straight, come to a complete stop. The straighter and quicker you park, the higher your score.',
+    step: `<span class="pill">Round ${currentRound} of ${TOTAL_ROUNDS}</span> Difficulty: ${DIFF[difficulty].label}`,
+    markers: [
+      // 4 corner markers around target spot
+      GoDriving.makeMarker(t.x + 8,        t.y + 8,        { color: '#fbbf24' }),
+      GoDriving.makeMarker(t.x + t.w - 8,  t.y + 8,        { color: '#fbbf24' }),
+      GoDriving.makeMarker(t.x + 8,        t.y + t.h - 8,  { color: '#fbbf24' }),
+      GoDriving.makeMarker(t.x + t.w - 8,  t.y + t.h - 8,  { kind: 'finish', label: 'PARK', color: '#fbbf24' }),
+    ],
+    check() {
+      // Need: all corner markers hit + parked centred + stopped + heading
+      const allHit = this.markers.every(m => m.hit);
+      if (!allHit) return false;
+      const c = GoDriving.car;
+      const inside = c.x > t.x && c.x < t.x + t.w && c.y > t.y && c.y < t.y + t.h;
+      const stopped = Math.abs(c.speed) < 4;
+      const headingOk = Math.abs(GoDriving.norm(c.heading - t.facing)) < 0.6
+                     || Math.abs(GoDriving.norm(c.heading - t.facing + Math.PI)) < 0.6;
+      if (inside && stopped && headingOk) parkedHold += 1/60;
+      else parkedHold = 0;
+      return parkedHold > 0.7;
+    },
+    onComplete() {
+      const score = computeRoundScore();
+      totalScore += score;
+      if (score > bestRound) bestRound = score;
+      document.getElementById('score-value').textContent = totalScore;
+      document.getElementById('best-value').textContent = bestRound + '%';
+      const stars = score >= 80 ? 'Perfect parking!' : score >= 60 ? 'Solid parking.' : 'Could be cleaner — try again next round.';
+      GoDriving.notify(`Round ${currentRound}: ${score} pts — ${stars}`, 'success', 2200);
+      GoDriving.audio.complete();
+      setTimeout(() => nextRound(), 2300);
+    }
+  });
+  document.getElementById('round-value').textContent = `${currentRound}/${TOTAL_ROUNDS}`;
+}
+
+function computeRoundScore() {
+  const t = GoDriving.PARK.spots[targetSpotIdx];
+  const c = GoDriving.car;
+  const cx = t.x + t.w/2, cy = t.y + t.h/2;
+  // Centring: max 40 pts, lose 1 per ~1.5 px off centre
+  const offset = GoDriving.dist(c.x, c.y, cx, cy);
+  const centerPts = Math.max(0, 40 - Math.round(offset * 0.7));
+  // Heading alignment: max 30 pts
+  const da = Math.min(
+    Math.abs(GoDriving.norm(c.heading - t.facing)),
+    Math.abs(GoDriving.norm(c.heading - t.facing + Math.PI))
+  );
+  const headingPts = Math.max(0, 30 - Math.round(da / 0.6 * 30));
+  // Time bonus: 30 pts max if <12s, scaling down to 0 by 30s
+  const seconds = (performance.now() - roundStartedAt) / 1000;
+  const timePts = clamp(Math.round(30 - (seconds - 12) * 1.7), 0, 30);
+  // Course correction penalty: -5 each over 2 allowed
+  const ccPenalty = Math.max(0, courseCorrections - 2) * 5;
+  return Math.max(0, centerPts + headingPts + timePts - ccPenalty);
+}
+
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+function resetRound() {
+  GoDriving.resetCar();
+  parkedHold = 0;
+  courseCorrections = 0;
+  lastDirection = 0;
+  GoDriving.notify('Round reset', 'info', 1000);
+}
+
+// Per-frame: count direction changes (course corrections)
+GoDriving.onUpdate(function (dt) {
+  const sp = GoDriving.car.speed;
+  const dir = sp > 6 ? 1 : sp < -6 ? -1 : 0;
+  if (lastDirection !== 0 && dir !== 0 && dir !== lastDirection) courseCorrections++;
+  if (dir !== 0) lastDirection = dir;
+});
+
+// Live coaching tips
+let lastTip = 0;
+function maybeCoach() {
+  const now = performance.now();
+  if (now - lastTip < DIFF[difficulty].coachMs) return;
+  const t = GoDriving.PARK.spots[targetSpotIdx];
+  if (!t || !t.highlight) return;
+  const c = GoDriving.car;
+  const cx = t.x + t.w/2, cy = t.y + t.h/2;
+  const d = GoDriving.dist(c.x, c.y, cx, cy);
+  if (d < 60 && Math.abs(c.speed) > 60) {
+    GoDriving.notify('Slow down — you\'re close', 'info', 1200);
+    lastTip = now;
+  } else if (d < 100) {
+    const da = Math.abs(GoDriving.norm(c.heading - t.facing));
+    if (da > 0.8 && da < Math.PI - 0.8) {
+      GoDriving.notify('Straighten the car before you stop', 'info', 1200);
+      lastTip = now;
+    }
+  }
+}
+
+// Hook into the game loop using a requestAnimationFrame chain
+(function tickCoach(){ maybeCoach(); requestAnimationFrame(tickCoach); })();
+
+function showEndScreen() {
+  const grade = totalScore >= 400 ? 'Outstanding driving!'
+              : totalScore >= 300 ? 'Solid effort.'
+              : totalScore >= 200 ? 'Keep practising.'
+              : 'Plenty of room to improve.';
+  document.getElementById('end-summary').textContent = grade;
+  document.getElementById('final-score').textContent = totalScore;
+  document.getElementById('end-best').textContent = bestRound;
+  document.getElementById('end-rounds').textContent = TOTAL_ROUNDS;
+  document.getElementById('end-diff').textContent = DIFF[difficulty].label;
+  document.getElementById('endscreen').classList.add('show');
+  GoDriving.audio.complete();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Lane Change Challenge — GoDriving.xyz</title>
+<link rel="stylesheet" href="game.css" />
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<a id="nav-back" href="lessons.html">← All lessons</a>
+
+<div id="intro" class="intro">
+  <h2>⇆ Lane Change Challenge</h2>
+  <div class="subtitle">
+    Hit a sequence of target lanes on the 8-lane highway. Signal first (Q for left, E for right). Don't crash. Each successful change adds to your combo — collisions reset it to zero.
+  </div>
+  <div class="controls-list">
+    <div class="control-chip"><b>WASD</b> drive</div>
+    <div class="control-chip"><b>Q</b> signal left</div>
+    <div class="control-chip"><b>E</b> signal right</div>
+    <div class="control-chip"><b>R</b> reset</div>
+  </div>
+  <div class="difficulty">
+    <button class="diff-btn" data-diff="easy">Easy</button>
+    <button class="diff-btn selected" data-diff="medium">Medium</button>
+    <button class="diff-btn" data-diff="hard">Hard</button>
+  </div>
+  <button class="primary" id="start-btn">Start Driving</button>
+  <div class="secondary-link"><a href="lessons.html">← back to all lessons</a></div>
+</div>
+
+<div id="mission" class="panel" style="display:none">
+  <div class="step" id="mission-step"></div>
+  <div class="title" id="mission-title"></div>
+  <div class="desc" id="mission-desc"></div>
+  <div class="progress"><div class="progress-bar" id="mission-progress"></div></div>
+</div>
+
+<div id="minimap" class="panel" style="display:none">
+  <canvas id="minimap-canvas" width="220" height="220"></canvas>
+</div>
+
+<div id="controls" class="panel" style="display:none">
+  <h3>Controls</h3>
+  <div class="row"><span class="key">W</span> Accelerate</div>
+  <div class="row"><span class="key">S</span> Brake</div>
+  <div class="row"><span class="key">A</span>/<span class="key">D</span> Steer</div>
+  <div class="row"><span class="key">Q</span>/<span class="key">E</span> Signal L/R</div>
+  <div class="row"><span class="key">Space</span> Handbrake</div>
+  <div class="row"><span class="key">R</span> Reset</div>
+</div>
+
+<div id="hud" class="panel" style="display:none">
+  <div id="speedometer">
+    <div id="speed-value">0</div>
+    <div id="speed-unit">km/h</div>
+    <div id="gear">
+      <div>Gear: <span id="gear-value">N</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="signals" style="display:none">
+  <div class="signal" id="signal-left">◀</div>
+  <div class="signal" id="signal-right">▶</div>
+</div>
+
+<div id="score-panel" class="panel" style="display:none">
+  <div class="label">Score</div>
+  <div class="score-value" id="score-value">0</div>
+  <div class="meta">
+    <div>Combo <span id="combo-value">×0</span></div>
+    <div>Crashes <span id="crash-value">0</span></div>
+  </div>
+</div>
+
+<div id="notification"></div>
+
+<div id="endscreen" class="endscreen">
+  <h2>Lane Change Run Complete!</h2>
+  <div class="summary" id="end-summary"></div>
+  <div class="final-score" id="final-score">0</div>
+  <div class="grades">
+    <div>Best Combo<span id="end-combo">0</span></div>
+    <div>Crashes<span id="end-crash">0</span></div>
+    <div>Difficulty<span id="end-diff">Medium</span></div>
+  </div>
+  <div class="actions">
+    <button class="primary" id="end-replay">Try Again</button>
+    <button class="secondary" id="end-back">← Lessons</button>
+  </div>
+</div>
+
+<script src="game-engine.js"></script>
+<script>
+'use strict';
+
+// 8 lanes total: indexes 0..7 from left to right (across both directions)
+// Northbound (right-hand traffic) lanes are indexes 4..7
+// Southbound lanes are indexes 0..3
+// We restrict the player to northbound lanes (4..7).
+
+let difficulty = 'medium';
+let totalScore = 0;
+let combo = 0;
+let bestCombo = 0;
+let crashes = 0;
+let targetLane = 7;        // 4 (leftmost NB) .. 7 (rightmost NB)
+let lanesCleared = 0;
+const LANES_PER_RUN = 8;
+let inLaneTime = 0;
+let lastSignalChange = 0;  // ms timestamp
+let signalSideAtChange = null;
+let collisionCooldown = 0;
+let lastCollisionPair = null;
+
+const DIFF = {
+  easy:   { traffic: { nbCount: 4, sbCount: 4, speedRange: [50, 80], spacing: 420 },  label: 'Easy',   collisionPx: 36 },
+  medium: { traffic: { nbCount: 8, sbCount: 8, speedRange: [70, 105], spacing: 280 }, label: 'Medium', collisionPx: 34 },
+  hard:   { traffic: { nbCount: 12, sbCount: 12, speedRange: [90, 130], spacing: 210 },label: 'Hard',   collisionPx: 32 },
+};
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    difficulty = btn.dataset.diff;
+  });
+});
+document.getElementById('start-btn').addEventListener('click', startCourse);
+document.getElementById('end-replay').addEventListener('click', () => {
+  document.getElementById('endscreen').classList.remove('show');
+  startCourse();
+});
+document.getElementById('end-back').addEventListener('click', () => location.href = 'lessons.html');
+
+// Map a northbound-lane index (4..7) to world X (centre of that lane).
+function laneCenterX(idx) {
+  // idx 4 = leftmost NB (next to median), idx 7 = rightmost NB
+  const offset = (idx - 4) * GoDriving.LANE_WIDTH;
+  return GoDriving.HW_CENTER_X + GoDriving.MEDIAN/2 + offset + GoDriving.LANE_WIDTH/2;
+}
+function currentLaneIndex() {
+  const c = GoDriving.car;
+  for (let i = 4; i <= 7; i++) {
+    const cx = laneCenterX(i);
+    if (Math.abs(c.x - cx) < GoDriving.LANE_WIDTH / 2) return i;
+  }
+  return -1;
+}
+function pickNewTarget(prev) {
+  // Pick a different lane, biased towards adjacent (changing 1 lane is normal)
+  let candidates = [];
+  for (let i = 4; i <= 7; i++) {
+    if (i === prev) continue;
+    candidates.push({ i, w: 1 / (1 + Math.abs(i - prev) * 0.7) });
+  }
+  const tot = candidates.reduce((s,c)=>s+c.w,0);
+  let r = Math.random() * tot;
+  for (const c of candidates) { r -= c.w; if (r <= 0) return c.i; }
+  return candidates[0].i;
+}
+
+function startCourse() {
+  totalScore = 0; combo = 0; bestCombo = 0; crashes = 0; lanesCleared = 0;
+  document.getElementById('intro').classList.add('hidden');
+  ['mission','minimap','controls','hud','signals','score-panel'].forEach(id => {
+    document.getElementById(id).style.display = '';
+  });
+  GoDriving.init({
+    start: { x: laneCenterX(7), y: GoDriving.HW_SOUTH_Y - 350, heading: -Math.PI/2 },
+    zoom: 1.0,
+    parkedSpots: [0,3,5,8,10],
+    traffic: DIFF[difficulty].traffic,
+    onReset: () => resetRound(),
+  });
+  GoDriving.rememberStart();
+  GoDriving.car.speed = 80; // give a head start
+  GoDriving.onUpdate(perFrame);
+  GoDriving.onPostRender(drawTargetOverlay);
+  GoDriving.start();
+  pickNextLane();
+}
+
+function pickNextLane() {
+  if (lanesCleared >= LANES_PER_RUN) { showEndScreen(); return; }
+  const cur = currentLaneIndex();
+  targetLane = pickNewTarget(cur === -1 ? 7 : cur);
+  inLaneTime = 0;
+  lastSignalChange = performance.now();
+  signalSideAtChange = null;
+  setMission();
+}
+
+function setMission() {
+  const targetX = laneCenterX(targetLane);
+  // Place finish marker ahead of player in the target lane
+  const ahead = GoDriving.car.y - 800;
+  GoDriving.setMission({
+    title: `Move into LANE ${targetLane - 3} (from the median)`,
+    desc: `Signal ${targetLane < currentLaneIndex() ? 'LEFT (Q)' : 'RIGHT (E)'} first, then change lanes safely. Hold the lane for 1 second to clear.`,
+    step: `<span class="pill">Lane ${lanesCleared + 1} of ${LANES_PER_RUN}</span> Difficulty: ${DIFF[difficulty].label}`,
+    markers: [
+      GoDriving.makeMarker(targetX, ahead, { kind: 'finish', color: '#a855f7', label: 'TARGET LANE', r: 36 }),
+    ],
+    onMarker(m) { /* clearing happens via inLaneTime logic */ },
+    check() { return false; },
+  });
+}
+
+function perFrame(dt) {
+  // Advance the finish marker forward as the player moves north,
+  // so it's always ~600px ahead in the target lane
+  const mission = GoDriving._mission;
+  if (mission && mission.markers && mission.markers[0]) {
+    mission.markers[0].x = laneCenterX(targetLane);
+    mission.markers[0].y = Math.min(mission.markers[0].y, GoDriving.car.y - 600);
+    mission.markers[0].hit = false; // never auto-hit; we control completion
+  }
+
+  // Detect signal changes (used to award signal bonus)
+  const c = GoDriving.car;
+  const sigSide = c.signalLeft ? 'left' : (c.signalRight ? 'right' : null);
+  if (sigSide !== signalSideAtChange) {
+    if (sigSide !== null) lastSignalChange = performance.now();
+    signalSideAtChange = sigSide;
+  }
+
+  // Check if player is in target lane
+  const inLane = Math.abs(c.x - laneCenterX(targetLane)) < GoDriving.LANE_WIDTH / 2;
+  // Speed must be reasonable
+  const moving = c.speed > 30;
+  if (inLane && moving) inLaneTime += dt;
+  else inLaneTime = Math.max(0, inLaneTime - dt * 0.5);
+
+  if (inLaneTime >= 1.0) clearLane();
+
+  // Collision detection with background traffic
+  if (collisionCooldown > 0) collisionCooldown -= dt;
+  else {
+    const px = GoDriving.LANE_WIDTH / 2 - 4;
+    for (const t of GoDriving.TRAFFIC) {
+      const d = GoDriving.dist(c.x, c.y, t.x, t.y);
+      if (d < DIFF[difficulty].collisionPx + 18) {
+        registerCrash();
+        break;
+      }
+    }
+  }
+
+  // Boundary: snap player back if drifting off highway
+  if (c.x < GoDriving.HW_CENTER_X + GoDriving.MEDIAN/2 + 4) {
+    c.x = GoDriving.HW_CENTER_X + GoDriving.MEDIAN/2 + 6;
+    c.speed = Math.min(c.speed, 60);
+  }
+  if (c.x > GoDriving.HW_CENTER_X + GoDriving.HW_HALF - 4) {
+    c.x = GoDriving.HW_CENTER_X + GoDriving.HW_HALF - 6;
+    c.speed = Math.min(c.speed, 60);
+  }
+  // Loop player when they reach the north end so the run can continue
+  if (c.y < GoDriving.HW_NORTH_Y + 400) {
+    c.y = GoDriving.HW_SOUTH_Y - 300;
+  }
+}
+
+function clearLane() {
+  lanesCleared++;
+  combo++;
+  if (combo > bestCombo) bestCombo = combo;
+  // Score: 50 base + 25 per combo + 25 if signal was on (toward target side)
+  let pts = 50 + (combo - 1) * 10;
+  const c = GoDriving.car;
+  const expectLeft = (currentLaneIndex() < targetLane) ? false : true; // moving to lower idx = left
+  const correctSignal = expectLeft ? c.signalLeft : c.signalRight;
+  if (correctSignal) pts += 25;
+  totalScore += pts;
+  document.getElementById('score-value').textContent = totalScore;
+  document.getElementById('combo-value').textContent = '×' + combo;
+  GoDriving.notify(`Lane cleared!  +${pts} (combo ×${combo})`, 'success', 1300);
+  GoDriving.audio.checkpoint();
+  // Auto turn off signals
+  c.signalLeft = false; c.signalRight = false;
+  setTimeout(pickNextLane, 600);
+}
+
+function registerCrash() {
+  crashes++;
+  combo = 0;
+  collisionCooldown = 1.5;
+  document.getElementById('crash-value').textContent = crashes;
+  document.getElementById('combo-value').textContent = '×0';
+  GoDriving.notify('Collision! Combo reset.', 'fail', 1500);
+  GoDriving.audio.crash();
+  // Slow the player down briefly
+  GoDriving.car.speed *= 0.4;
+}
+
+function resetRound() {
+  combo = 0;
+  document.getElementById('combo-value').textContent = '×0';
+  GoDriving.notify('Reset', 'info', 800);
+}
+
+function drawTargetOverlay(ctx) {
+  // Bright vertical band over the target lane to make it obvious
+  const z = GoDriving.camera.zoom;
+  const cx = laneCenterX(targetLane);
+  const [sx, sy] = GoDriving.worldToScreen(cx, GoDriving.car.y - 200);
+  ctx.save();
+  ctx.globalAlpha = 0.18 + 0.05 * Math.sin(performance.now() / 160);
+  const grad = ctx.createLinearGradient(0, 0, 0, innerHeight);
+  grad.addColorStop(0, 'rgba(168, 85, 247, 0)');
+  grad.addColorStop(0.5, 'rgba(168, 85, 247, 0.6)');
+  grad.addColorStop(1, 'rgba(168, 85, 247, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(sx - GoDriving.LANE_WIDTH/2 * z, 0, GoDriving.LANE_WIDTH * z, innerHeight);
+  ctx.restore();
+  // Big arrow at top of screen indicating target
+  ctx.save();
+  ctx.translate(sx, 120);
+  ctx.fillStyle = '#a855f7';
+  ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 16;
+  const pulse = 1 + Math.sin(performance.now() / 200) * 0.1;
+  ctx.beginPath();
+  ctx.moveTo(0, 28 * pulse); ctx.lineTo(20, -4); ctx.lineTo(8, -4);
+  ctx.lineTo(8, -22); ctx.lineTo(-8, -22); ctx.lineTo(-8, -4);
+  ctx.lineTo(-20, -4);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function showEndScreen() {
+  document.getElementById('end-summary').textContent = bestCombo >= 6 ? 'Excellent lane discipline!' : bestCombo >= 3 ? 'Good run.' : 'Practise smoother changes.';
+  document.getElementById('final-score').textContent = totalScore;
+  document.getElementById('end-combo').textContent = bestCombo;
+  document.getElementById('end-crash').textContent = crashes;
+  document.getElementById('end-diff').textContent = DIFF[difficulty].label;
+  document.getElementById('endscreen').classList.add('show');
+  GoDriving.audio.complete();
+}
+</script>
+</body>
+</html>

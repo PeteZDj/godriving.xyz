@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Emergency Stop — GoDriving.xyz</title>
+<link rel="stylesheet" href="game.css" />
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<a id="nav-back" href="lessons.html">← All lessons</a>
+
+<div id="intro" class="intro">
+  <h2>🛑 Emergency Stop</h2>
+  <div class="subtitle">
+    Get up to speed, then watch the road. A hazard will appear without warning. Brake to a complete stop before you hit it. Faster reaction = higher score. Five rounds.
+  </div>
+  <div class="controls-list">
+    <div class="control-chip"><b>W</b> accelerate</div>
+    <div class="control-chip"><b>S</b> brake</div>
+    <div class="control-chip"><b>Space</b> handbrake</div>
+    <div class="control-chip"><b>R</b> reset round</div>
+  </div>
+  <div class="difficulty">
+    <button class="diff-btn" data-diff="easy">Easy (60 km/h)</button>
+    <button class="diff-btn selected" data-diff="medium">Medium (80 km/h)</button>
+    <button class="diff-btn" data-diff="hard">Hard (110 km/h)</button>
+  </div>
+  <button class="primary" id="start-btn">Start Round 1</button>
+  <div class="secondary-link"><a href="lessons.html">← back to all lessons</a></div>
+</div>
+
+<div id="mission" class="panel" style="display:none">
+  <div class="step" id="mission-step"></div>
+  <div class="title" id="mission-title"></div>
+  <div class="desc" id="mission-desc"></div>
+  <div class="progress"><div class="progress-bar" id="mission-progress"></div></div>
+</div>
+
+<div id="minimap" class="panel" style="display:none">
+  <canvas id="minimap-canvas" width="220" height="220"></canvas>
+</div>
+
+<div id="controls" class="panel" style="display:none">
+  <h3>Controls</h3>
+  <div class="row"><span class="key">W</span> Accelerate</div>
+  <div class="row"><span class="key">S</span> Brake</div>
+  <div class="row"><span class="key">Space</span> Handbrake</div>
+  <div class="row"><span class="key">R</span> Reset round</div>
+  <div class="row"><span class="key">M</span> Mute</div>
+</div>
+
+<div id="hud" class="panel" style="display:none">
+  <div id="speedometer">
+    <div id="speed-value">0</div>
+    <div id="speed-unit">km/h</div>
+    <div id="gear">
+      <div>Gear: <span id="gear-value">N</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="signals" style="display:none">
+  <div class="signal" id="signal-left">◀</div>
+  <div class="signal" id="signal-right">▶</div>
+</div>
+
+<div id="score-panel" class="panel" style="display:none">
+  <div class="label">Score</div>
+  <div class="score-value" id="score-value">0</div>
+  <div class="meta">
+    <div>Round <span id="round-value">1/5</span></div>
+    <div>Reaction <span id="rt-value">— ms</span></div>
+  </div>
+</div>
+
+<div id="notification"></div>
+
+<div id="endscreen" class="endscreen">
+  <h2>Reaction-Time Drill Complete!</h2>
+  <div class="summary" id="end-summary"></div>
+  <div class="final-score" id="final-score">0</div>
+  <div class="grades">
+    <div>Best Reaction<span id="end-rt">— ms</span></div>
+    <div>Hits<span id="end-hits">0</span></div>
+    <div>Difficulty<span id="end-diff">Medium</span></div>
+  </div>
+  <div class="actions">
+    <button class="primary" id="end-replay">Try Again</button>
+    <button class="secondary" id="end-back">← Lessons</button>
+  </div>
+</div>
+
+<script src="game-engine.js"></script>
+<script>
+'use strict';
+
+const TOTAL_ROUNDS = 5;
+let difficulty = 'medium';
+let roundIdx = 0;
+let totalScore = 0;
+let bestRt = Infinity;
+let hits = 0;
+
+const DIFF = {
+  easy:   { speedKmh: 60,  collDist: 28, label: 'Easy' },
+  medium: { speedKmh: 80,  collDist: 28, label: 'Medium' },
+  hard:   { speedKmh: 110, collDist: 28, label: 'Hard' },
+};
+
+let cones = [];
+let state = 'idle';   // idle | accelerating | armed | reacting | done
+let armTimer = 0;     // seconds until hazard fires
+let hazardSpawnTime = 0;
+let brakeStartTime = 0;
+let prevSpeed = 0;
+let collided = false;
+let roundDone = false;
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    difficulty = btn.dataset.diff;
+  });
+});
+document.getElementById('start-btn').addEventListener('click', startCourse);
+document.getElementById('end-replay').addEventListener('click', () => {
+  document.getElementById('endscreen').classList.remove('show');
+  startCourse();
+});
+document.getElementById('end-back').addEventListener('click', () => location.href = 'lessons.html');
+
+function startCourse() {
+  totalScore = 0; bestRt = Infinity; hits = 0; roundIdx = 0;
+  document.getElementById('intro').classList.add('hidden');
+  ['mission','minimap','controls','hud','signals','score-panel'].forEach(id => {
+    document.getElementById(id).style.display = '';
+  });
+  GoDriving.init({
+    start: { x: GoDriving.HW_CENTER_X + 120, y: GoDriving.HW_SOUTH_Y - 100, heading: -Math.PI/2 },
+    zoom: 0.95,
+    parkedSpots: [0,3,5,8,10],
+    traffic: false,
+    onReset: () => resetRound(),
+  });
+  GoDriving.rememberStart();
+  GoDriving.onUpdate(perFrame);
+  GoDriving.onDrawObjects(drawCones);
+  GoDriving.start();
+  nextRound();
+}
+
+function nextRound() {
+  roundIdx++;
+  if (roundIdx > TOTAL_ROUNDS) { showEndScreen(); return; }
+  state = 'accelerating';
+  cones = [];
+  collided = false;
+  roundDone = false;
+  hazardSpawnTime = 0;
+  brakeStartTime = 0;
+  GoDriving.resetCar();
+  document.getElementById('round-value').textContent = `${roundIdx}/${TOTAL_ROUNDS}`;
+  document.getElementById('rt-value').textContent = '— ms';
+  GoDriving.setMission({
+    title: `Round ${roundIdx}: get to ${DIFF[difficulty].speedKmh} km/h`,
+    desc: 'Hold W to build up to the target speed. A hazard will appear when you least expect it.',
+    step: `<span class="pill">Round ${roundIdx} of ${TOTAL_ROUNDS}</span> Difficulty: ${DIFF[difficulty].label}`,
+    markers: [],
+    check() { return false; },
+  });
+}
+
+function spawnHazard() {
+  const c = GoDriving.car;
+  // Spawn cones across the player's lane, ~200-280 px ahead
+  const aheadDist = 220 + Math.random() * 80;
+  const fx = c.x + Math.cos(c.heading) * aheadDist;
+  const fy = c.y + Math.sin(c.heading) * aheadDist;
+  // Perpendicular (right of heading) for cone spread
+  const px = -Math.sin(c.heading);
+  const py =  Math.cos(c.heading);
+  const spread = 36;
+  for (let i = -2; i <= 2; i++) {
+    cones.push({
+      x: fx + px * i * spread,
+      y: fy + py * i * spread,
+      hit: false,
+    });
+  }
+  hazardSpawnTime = performance.now();
+  state = 'reacting';
+  GoDriving.notify('⚠ HAZARD!', 'fail', 1500);
+  GoDriving.audio.buzz();
+  GoDriving.setMission({
+    title: '🛑 Stop NOW',
+    desc: 'Brake to a complete stop before hitting the cones.',
+    step: `<span class="pill">Round ${roundIdx} of ${TOTAL_ROUNDS}</span> REACT!`,
+    markers: [],
+    check() { return false; },
+  });
+}
+
+function perFrame(dt) {
+  const c = GoDriving.car;
+  const speedKmh = Math.abs(c.speed) * 0.36;
+
+  // Detect first brake press (for reaction time)
+  if (state === 'reacting' && brakeStartTime === 0) {
+    if (GoDriving.keys.KeyS || GoDriving.keys.ArrowDown || GoDriving.keys.Space) {
+      brakeStartTime = performance.now();
+      const rt = brakeStartTime - hazardSpawnTime;
+      document.getElementById('rt-value').textContent = `${Math.round(rt)} ms`;
+      if (rt < bestRt) bestRt = rt;
+    }
+  }
+
+  // State machine
+  if (state === 'accelerating') {
+    if (speedKmh >= DIFF[difficulty].speedKmh - 5) {
+      state = 'armed';
+      armTimer = 0.8 + Math.random() * 2.2; // 0.8..3.0s
+    }
+  } else if (state === 'armed') {
+    armTimer -= dt;
+    if (armTimer <= 0) spawnHazard();
+  } else if (state === 'reacting') {
+    // Collision check
+    for (const co of cones) {
+      if (co.hit) continue;
+      if (GoDriving.dist(c.x, c.y, co.x, co.y) < DIFF[difficulty].collDist) {
+        co.hit = true;
+        collided = true;
+      }
+    }
+    if (collided && !roundDone) {
+      finishRound(false);
+    } else if (Math.abs(c.speed) < 4 && !roundDone) {
+      // Stopped successfully
+      finishRound(true);
+    }
+  }
+
+  prevSpeed = c.speed;
+}
+
+function finishRound(success) {
+  roundDone = true;
+  state = 'done';
+  let pts = 0;
+  if (success) {
+    hits++;
+    const rt = brakeStartTime > 0 ? (brakeStartTime - hazardSpawnTime) : 9999;
+    // Score: 100 base, minus 50 * (rt - 250)/750 (capped)
+    const rtPenalty = Math.max(0, Math.min(60, (rt - 250) / 12));
+    // Distance to closest cone bonus (closer to ~30px = good control)
+    const closest = Math.min(...cones.map(co => GoDriving.dist(GoDriving.car.x, GoDriving.car.y, co.x, co.y)));
+    const distBonus = closest < 60 ? 20 : closest < 100 ? 10 : 0;
+    pts = Math.max(20, Math.round(100 - rtPenalty + distBonus));
+    totalScore += pts;
+    GoDriving.notify(`Stopped safely! +${pts} pts`, 'success', 2000);
+    GoDriving.audio.complete();
+  } else {
+    pts = 0;
+    GoDriving.notify('Hit the hazard. 0 pts.', 'fail', 2000);
+    GoDriving.audio.crash();
+  }
+  document.getElementById('score-value').textContent = totalScore;
+  setTimeout(() => nextRound(), 2200);
+}
+
+function resetRound() {
+  cones = [];
+  collided = false;
+  roundDone = false;
+  state = 'accelerating';
+  hazardSpawnTime = 0;
+  brakeStartTime = 0;
+  GoDriving.resetCar();
+  GoDriving.notify('Round reset', 'info', 800);
+}
+
+function drawCones(ctx) {
+  for (const co of cones) GoDriving.drawCone(co);
+}
+
+function showEndScreen() {
+  document.getElementById('end-summary').textContent =
+    hits === 5 ? 'Lightning reflexes — perfect round!' :
+    hits >= 3 ? 'Solid braking. Polish those reactions.' :
+    'Practise scanning the road further ahead.';
+  document.getElementById('final-score').textContent = totalScore;
+  document.getElementById('end-rt').textContent = bestRt === Infinity ? '— ms' : `${Math.round(bestRt)} ms`;
+  document.getElementById('end-hits').textContent = `${hits}/${TOTAL_ROUNDS}`;
+  document.getElementById('end-diff').textContent = DIFF[difficulty].label;
+  document.getElementById('endscreen').classList.add('show');
+  GoDriving.audio.complete();
+}
+</script>
+</body>
+</html>

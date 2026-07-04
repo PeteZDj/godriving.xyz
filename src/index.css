@@ -1,0 +1,51 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Open+Sans:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #0071bc;
+  --color-brand-dark: #005a96;
+  --color-go: #4caf50;
+  --color-go-dark: #3d9140;
+  --color-ink: #1a1a1a;
+  --font-sans: "Open Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Poppins", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, .font-display {
+  font-family: var(--font-display);
+}
+
+/* Subtle animated road-dashes utility */
+@keyframes dash-move {
+  from { background-position: 0 0; }
+  to { background-position: 64px 0; }
+}
+.road-dashes {
+  background-image: repeating-linear-gradient(90deg, #ffffff 0 32px, transparent 32px 64px);
+  animation: dash-move 1.2s linear infinite;
+}
+
+@keyframes float-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-float { animation: float-soft 4s ease-in-out infinite; }
+
+::selection {
+  background: rgba(0, 113, 188, 0.2);
+}
