@@ -16,6 +16,12 @@ const gameNames: Record<string, string> = {
   match: 'Sign Match',
   quiz: 'Highway Code Quiz',
   roadrun: 'Road Run',
+  drive_parking: 'Parking Practice',
+  drive_roundabout: 'Roundabout Master',
+  drive_lanechange: 'Lane Change Challenge',
+  drive_emergency: 'Emergency Stop',
+  drive_night: 'Night Drive',
+  drive_reverse: 'Three-Point Turn',
 };
 
 export default function Dashboard() {

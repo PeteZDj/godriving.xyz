@@ -225,17 +225,40 @@ app.post('/api/auth/google', wrap(async (req, res) => {
   if (!credential) return res.status(400).json({ error: 'credential required' });
 
   const ticket = await gClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
-  const { sub, email, name, picture } = ticket.getPayload();
+  const payload = ticket.getPayload();
+  const sub = payload.sub;
+  const email = String(payload.email || '').trim().toLowerCase();
+  const name = payload.name || email.split('@')[0];
+  const picture = payload.picture || null;
 
-  const { rows } = await q(
-    `INSERT INTO users (email, name, avatar, google_sub, role, coins)
-     VALUES ($1, $2, $3, $4, 'student', 50)
-     ON CONFLICT (google_sub) DO UPDATE
-       SET name = EXCLUDED.name, avatar = EXCLUDED.avatar
-     RETURNING *`,
-    [email, name, picture || null, sub]
+  // Link to an existing account by google_sub OR email, otherwise create one.
+  const existing = await q(
+    'SELECT * FROM users WHERE google_sub = $1 OR email = $2 ORDER BY (google_sub = $1) DESC LIMIT 1',
+    [sub, email]
   );
-  const user = rows[0];
+
+  let user;
+  if (existing.rows.length) {
+    const upd = await q(
+      `UPDATE users
+         SET google_sub = $1,
+             name = COALESCE(NULLIF(name, ''), $2),
+             avatar = COALESCE($3, avatar)
+       WHERE id = $4
+       RETURNING *`,
+      [sub, name, picture, existing.rows[0].id]
+    );
+    user = upd.rows[0];
+  } else {
+    const ins = await q(
+      `INSERT INTO users (email, name, avatar, google_sub, role, coins)
+       VALUES ($1, $2, $3, $4, 'student', 50)
+       RETURNING *`,
+      [email, name, picture, sub]
+    );
+    user = ins.rows[0];
+  }
+
   const token = await createSession(user.id);
   res.json({ token, user: publicUser(user) });
 }));

@@ -19,6 +19,16 @@ html {
   scroll-behavior: smooth;
 }
 
+.pill {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-right: 4px;
+  border-radius: 9999px;
+  background: rgba(56, 189, 248, 0.25);
+  color: #e0f2fe;
+  font-weight: 600;
+}
+
 body {
   font-family: var(--font-sans);
   color: var(--color-ink);

@@ -14,6 +14,7 @@ import SignMatch from './pages/games/SignMatch';
 import SignQuiz from './pages/games/SignQuiz';
 import RoadRun from './pages/games/RoadRun';
 import SignLibrary from './pages/games/SignLibrary';
+import Drive from './pages/games/Drive';
 import { ReactNode } from 'react';
 
 function Protected({ children }: { children: ReactNode }) {
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/games/match" element={<Protected><SignMatch /></Protected>} />
           <Route path="/games/quiz" element={<Protected><SignQuiz /></Protected>} />
           <Route path="/games/roadrun" element={<Protected><RoadRun /></Protected>} />
+          <Route path="/games/drive/:slug" element={<Drive />} />
           <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
