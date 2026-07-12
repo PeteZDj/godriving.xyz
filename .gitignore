@@ -18,3 +18,14 @@ Desktop.ini
 *.swo
 *~
 .idea/
+
+# .NET / MAUI (GoDriving.App) build artifacts
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.binlog
+*.aab
+
+# Keep the shippable APK tracked even though bin/ is ignored
+!public/downloads/godriving.apk

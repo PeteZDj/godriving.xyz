@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Download } from 'lucide-react';
 import { Logo } from './Logo';
 import { api } from '../lib/api';
 
@@ -41,6 +42,14 @@ export function Footer() {
               {done ? 'Thanks!' : 'Notify me'}
             </button>
           </form>
+          <a
+            href="/downloads/godriving.apk"
+            download
+            className="mt-6 inline-flex items-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white hover:bg-brand-dark"
+          >
+            <Download className="h-4 w-4" />
+            Download Android app
+          </a>
         </div>
 
         <div>
@@ -50,6 +59,7 @@ export function Footer() {
             <li><Link to="/games/signs" className="hover:text-white">Sign Library</Link></li>
             <li><Link to="/games/quiz" className="hover:text-white">Highway Code Quiz</Link></li>
             <li><Link to="/leaderboard" className="hover:text-white">Leaderboard</Link></li>
+            <li><a href="/downloads/godriving.apk" download className="hover:text-white">Android App</a></li>
           </ul>
         </div>
 

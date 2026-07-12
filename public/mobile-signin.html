@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Sign in to GoDriving</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    :root { --brand: #0071bc; --go: #4caf50; --ink: #0b1b2b; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 22px; padding: 28px;
+      font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(1200px 600px at 50% -10%, #123049 0%, #0b1b2b 60%); color: #fff; text-align: center;
+    }
+    .logo { width: 60px; height: 60px; border-radius: 16px; background: var(--brand);
+      display: flex; align-items: center; justify-content: center; font-size: 30px; box-shadow: 0 10px 30px rgba(0,113,188,.4); }
+    h1 { font-size: 24px; margin: 0; font-weight: 800; }
+    h1 .go { color: var(--go); }
+    p { margin: 0; opacity: .7; font-size: 14px; max-width: 320px; }
+    .card { background: #fff; border-radius: 16px; padding: 22px; width: 100%; max-width: 340px; }
+    #buttonWrap { display: flex; justify-content: center; min-height: 44px; }
+    .msg { color: var(--ink); font-size: 14px; margin-top: 14px; min-height: 20px; }
+    .spinner { width: 26px; height: 26px; border: 3px solid #bfe0f5; border-top-color: var(--brand);
+      border-radius: 50%; animation: spin .8s linear infinite; margin: 12px auto 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .foot { opacity: .45; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="logo">&#128663;</div>
+  <h1>Sign in to Go<span class="go">Driving</span></h1>
+  <p>Continue with Google to save your XP, coins and leaderboard rank.</p>
+  <div class="card">
+    <div id="buttonWrap"></div>
+    <div id="msg" class="msg"></div>
+  </div>
+  <p class="foot">&copy; 2026 GoDriving.xyz · Drive smart, drive safe</p>
+
+  <script>
+    var CLIENT_ID = '355354020888-nmt0qlr55adgprvhaht50oamstv637qs.apps.googleusercontent.com';
+    var msg = document.getElementById('msg');
+    function setMsg(t) { msg.textContent = t || ''; }
+
+    async function onCredential(response) {
+      try {
+        setMsg('Signing you in…');
+        document.getElementById('buttonWrap').innerHTML = '<div class="spinner"></div>';
+        var res = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential: response.credential })
+        });
+        if (!res.ok) throw new Error('auth failed');
+        var d = await res.json();
+        var p = new URLSearchParams();
+        p.set('token', d.token || '');
+        p.set('name', (d.user && d.user.name) || '');
+        p.set('email', (d.user && d.user.email) || '');
+        try { p.set('user', btoa(unescape(encodeURIComponent(JSON.stringify(d.user || {}))))); } catch (e) {}
+        window.location.href = 'godriving://auth#' + p.toString();
+      } catch (e) {
+        setMsg('Sign-in failed. Please try again.');
+        renderButton();
+      }
+    }
+
+    function renderButton() {
+      if (!window.google || !google.accounts || !google.accounts.id) {
+        setMsg('Loading Google…');
+        return setTimeout(renderButton, 400);
+      }
+      google.accounts.id.initialize({ client_id: CLIENT_ID, callback: onCredential, ux_mode: 'popup' });
+      document.getElementById('buttonWrap').innerHTML = '';
+      google.accounts.id.renderButton(document.getElementById('buttonWrap'),
+        { theme: 'filled_blue', size: 'large', text: 'continue_with', shape: 'pill', width: 280 });
+      google.accounts.id.prompt();
+    }
+
+    window.addEventListener('load', function () { setTimeout(renderButton, 300); });
+  </script>
+</body>
+</html>
