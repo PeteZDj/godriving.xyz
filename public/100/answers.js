@@ -109,3 +109,11 @@ window.ANSWERS = {
   99: { status:"doing", text:"Chase PMF: schools paying for quality leads and learners returning to play." },
   100:{ status:"doing", text:"Evaluate expansion: more countries, in-app booking/payments and corporate/fleet driver training." }
 };
+
+/* __DESIGN__ brand-adaptive design tokens for the /100 page */
+window.SITE.design = {"mode":"light","primary":"#0071bc","accent":"#4caf50","scale":"#f59e0b","launch":"#22c55e","setup":"#0071bc","bg":"#ffffff","bg2":"#f5f7fb","card":"#ffffff","line":"#e7ecf3","radius":16,"headFont":"'Poppins'","bodyFont":"'Open Sans'","fontLink":"https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Open+Sans:wght@400;500;600&display=swap","logo":"/favicon.svg"};
+/* __END_DESIGN__ */
+
+/* __DESIGN__ brand-adaptive design tokens for the /100 page */
+window.SITE.design = {"mode":"light","primary":"#0071bc","accent":"#4caf50","scale":"#f59e0b","launch":"#22c55e","setup":"#0071bc","bg":"#ffffff","bg2":"#f5f7fb","card":"#ffffff","line":"#e7ecf3","radius":16,"headFont":"'Poppins'","bodyFont":"'Open Sans'","fontLink":"https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Open+Sans:wght@400;500;600&display=swap","logo":"/favicon.svg"};
+/* __END_DESIGN__ */
