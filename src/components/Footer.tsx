@@ -42,14 +42,19 @@ export function Footer() {
               {done ? 'Thanks!' : 'Notify me'}
             </button>
           </form>
-          <a
-            href="/downloads/godriving.apk"
-            download
-            className="mt-6 inline-flex items-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white hover:bg-brand-dark"
-          >
-            <Download className="h-4 w-4" />
-            Download Android app
-          </a>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <a
+              href="/downloads/godriving.apk"
+              download
+              className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white hover:bg-brand-dark"
+            >
+              <Download className="h-4 w-4" />
+              Download Android app
+            </a>
+          </div>
+          <p className="mt-3 text-xs text-white/40">
+            Our React Native build — faster, with Sign Library, quizzes, Sign Match &amp; Road Run.
+          </p>
         </div>
 
         <div>

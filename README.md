@@ -85,3 +85,18 @@ Node API and serves the SPA for all other routes.
 ---
 
 Built with ❤️ for safer roads across Africa.
+
+
+## Mobile App (React Native)
+
+<img src="godriving-rn/assets/images/icon.png" alt="GoDriving app icon" width="72" align="left" />
+
+**GoDriving for Android** is a native mobile app built with **React Native (Expo)** -- master the Highway Code with games, quizzes, a sign library, Sign Match and Road Run.
+
+**[Download the Android app](https://godriving.xyz/downloads/godriving.apk)**
+
+- **Source:** [`godriving-rn/`](godriving-rn) -- the full Expo Router + TypeScript project.
+- **Stack:** Expo SDK 57, Expo Router, TypeScript, React Native, AsyncStorage.
+- Runs on Android 7.0+ (arm64 / armv7). You may need to allow *install from unknown sources*.
+
+<br clear="left" />
