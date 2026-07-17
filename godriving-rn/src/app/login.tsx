@@ -2,8 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { googleBridgeSignIn } from '@/lib/googleBridge';
 import { useGD } from '@/store';
 import { C, font, GRAD, radius } from '@/theme';
 import { GradientButton, Row, Txt } from '@/ui';
@@ -20,12 +21,30 @@ export default function Login() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState<'google' | null>(null);
+  const [error, setError] = useState('');
 
   const submit = () => {
     if (!email) return;
     const finalName = mode === 'signup' ? name || email.split('@')[0] : email.split('@')[0];
     signIn(finalName, email, { provider: 'email' });
     router.back();
+  };
+
+  const handleGoogle = async () => {
+    setError('');
+    setBusy('google');
+    try {
+      const r = await googleBridgeSignIn();
+      if (r && r.email) {
+        signIn(r.name, r.email, { city: r.city, country: r.country, provider: 'google' });
+        router.back();
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Google sign-in failed. Please try again.');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const demo = (d: (typeof DEMO)[number]) => {
@@ -79,13 +98,26 @@ export default function Login() {
           </Row>
 
           <Pressable
-            onPress={() => demo(DEMO[0])}
-            style={{ height: 50, borderRadius: radius.pill, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 16 }}>
-            <Ionicons name="logo-google" size={18} color="#DB4437" />
-            <Txt f={font.bodyBold} size={14} color={C.ink}>
-              Continue with Google
-            </Txt>
+            onPress={handleGoogle}
+            disabled={busy === 'google'}
+            style={{ height: 50, borderRadius: radius.pill, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.card, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 16, opacity: busy === 'google' ? 0.6 : 1 }}>
+            {busy === 'google' ? (
+              <ActivityIndicator color={C.brand} />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={18} color="#DB4437" />
+                <Txt f={font.bodyBold} size={14} color={C.ink}>
+                  Continue with Google
+                </Txt>
+              </>
+            )}
           </Pressable>
+
+          {!!error && (
+            <Txt f={font.body} size={12} color="#DB4437" align="center" style={{ marginBottom: 12 }}>
+              {error}
+            </Txt>
+          )}
 
           <Row gap={10} style={{ marginBottom: 16 }}>
             <View style={{ flex: 1, height: 1, backgroundColor: C.line }} />
