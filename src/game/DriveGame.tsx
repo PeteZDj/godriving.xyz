@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Volume2, VolumeX, Trophy, Zap, Coins, RotateCcw, Home, Gamepad2 } from 'lucide-react';
+import { ArrowLeft, Volume2, VolumeX, Trophy, Zap, Coins, RotateCcw, Home, Gamepad2, Settings, X, RotateCw } from 'lucide-react';
 import { createEngine } from './engine';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { usePrefs, shouldShowControls, isTouchDevice, vibrate } from '../lib/prefs';
+import { GameSettings } from '../components/GameSettings';
 
 export interface DriveGameConfig {
   id: string; // backend score key, e.g. "drive_parking"
@@ -39,6 +41,7 @@ type Phase = 'intro' | 'playing' | 'ended';
 
 export function DriveGame({ config }: { config: DriveGameConfig }) {
   const { user, refresh } = useAuth();
+  const { prefs } = usePrefs();
   const containerRef = useRef<HTMLDivElement>(null);
   const miniRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<any>(null);
@@ -47,6 +50,11 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
   const [phase, setPhase] = useState<Phase>('intro');
   const [difficulty, setDifficulty] = useState(config.difficulties?.[1]?.id || config.difficulties?.[0]?.id || 'medium');
   const [muted, setMuted] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const showTouch = shouldShowControls(prefs.controls);
+  const steerSize: BtnSize = prefs.bigControls ? 'xl' : 'lg';
+  const pedalSize: BtnSize = prefs.bigControls ? 'xl' : 'lg';
 
   const [hud, setHud] = useState({ speed: 0, gear: 'N', signalLeft: false, signalRight: false });
   const [mission, setMission] = useState({ title: '', desc: '', step: '', progress: 0 });
@@ -96,6 +104,14 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
 
+  // Live-sync engine audio when the Sound preference changes.
+  useEffect(() => {
+    try {
+      const eng = engineRef.current;
+      if (eng?.audio && eng.audio.muted !== !prefs.sound) eng.audio.toggleMute();
+    } catch { /* ignore */ }
+  }, [prefs.sound]);
+
   const finishGame = useCallback(async (result: FinishResult) => {
     setEnd(result);
     setPhase('ended');
@@ -115,6 +131,11 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
     setEnd(null);
     setReward(null);
     setScoreBox({ score: 0, round: '', best: '' });
+    // Sync engine audio to the saved Sound preference.
+    try {
+      const eng = engineRef.current;
+      if (eng?.audio && eng.audio.muted !== !prefs.sound) eng.audio.toggleMute();
+    } catch { /* ignore */ }
     setPhase('playing');
     lessonRef.current?.start(difficulty);
   };
@@ -126,6 +147,7 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
     const eng = engineRef.current;
     if (!eng) return;
     eng.keys[code] = down;
+    if (down) vibrate(prefs.haptics);
   };
   const signal = (side: 'L' | 'R') => {
     const eng = engineRef.current;
@@ -133,6 +155,7 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
     if (side === 'L') { eng.car.signalLeft = !eng.car.signalLeft; if (eng.car.signalLeft) eng.car.signalRight = false; }
     else { eng.car.signalRight = !eng.car.signalRight; if (eng.car.signalRight) eng.car.signalLeft = false; }
     eng.audio.signalClick();
+    vibrate(prefs.haptics);
   };
 
   return (
@@ -152,8 +175,11 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
               {scoreBox.best && <span className="ml-3 text-white/60">Best {scoreBox.best}</span>}
             </div>
           )}
-          <button onClick={toggleMute} className="rounded-full bg-black/50 p-2.5 text-white backdrop-blur hover:bg-black/70">
+          <button onClick={toggleMute} className="rounded-full bg-black/50 p-2.5 text-white backdrop-blur hover:bg-black/70" aria-label="Mute">
             {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          </button>
+          <button onClick={() => setShowSettings(true)} className="rounded-full bg-black/50 p-2.5 text-white backdrop-blur hover:bg-black/70" aria-label="Controls & settings">
+            <Settings className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -190,23 +216,42 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
         </div>
       )}
 
-      {/* Touch controls */}
-      {phase === 'playing' && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex items-end justify-between px-4 md:hidden">
-          <div className="grid grid-cols-3 gap-1.5">
-            <span />
-            <TouchBtn label="▲" onDown={() => hold('KeyW', true)} onUp={() => hold('KeyW', false)} />
-            <span />
-            <TouchBtn label="◀" onDown={() => hold('KeyA', true)} onUp={() => hold('KeyA', false)} />
-            <TouchBtn label="▼" onDown={() => hold('KeyS', true)} onUp={() => hold('KeyS', false)} />
-            <TouchBtn label="▶" onDown={() => hold('KeyD', true)} onUp={() => hold('KeyD', false)} />
+      {/* Touch controls — two-thumb driving layout */}
+      {phase === 'playing' && showTouch && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex items-end justify-between gap-3 px-4">
+          {/* Steering — left thumb */}
+          <div className="flex items-end gap-2.5">
+            <TouchBtn label="◀" size={steerSize} onDown={() => hold('KeyA', true)} onUp={() => hold('KeyA', false)} />
+            <TouchBtn label="▶" size={steerSize} onDown={() => hold('KeyD', true)} onUp={() => hold('KeyD', false)} />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <div className="flex gap-1.5">
-              <TouchBtn label="◀" small onDown={() => signal('L')} onUp={() => {}} />
-              <TouchBtn label="▶" small onDown={() => signal('R')} onUp={() => {}} />
+
+          {/* Signals + handbrake — center */}
+          <div className="flex flex-col items-center gap-2 pb-1">
+            <div className="flex gap-2">
+              <TouchBtn label="L" size="sm" tone="signal" onDown={() => signal('L')} onUp={() => {}} />
+              <TouchBtn label="R" size="sm" tone="signal" onDown={() => signal('R')} onUp={() => {}} />
             </div>
-            <TouchBtn label="BRAKE" wide onDown={() => hold('Space', true)} onUp={() => hold('Space', false)} />
+            <TouchBtn label="P" size="sm" onDown={() => hold('Space', true)} onUp={() => hold('Space', false)} />
+          </div>
+
+          {/* Pedals — right thumb */}
+          <div className="flex items-end gap-2.5">
+            <TouchBtn label="▼" size={pedalSize} tone="brake" onDown={() => hold('KeyS', true)} onUp={() => hold('KeyS', false)} />
+            <TouchBtn label="▲" size={pedalSize} tone="gas" onDown={() => hold('KeyW', true)} onUp={() => hold('KeyW', false)} />
+          </div>
+        </div>
+      )}
+
+      {/* In-game settings panel */}
+      {showSettings && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-ink">Controls &amp; settings</h3>
+              <button onClick={() => setShowSettings(false)} className="text-ink/40 hover:text-ink"><X className="h-5 w-5" /></button>
+            </div>
+            <GameSettings compact />
+            <button onClick={() => setShowSettings(false)} className="mt-5 w-full rounded-xl bg-brand py-3 font-semibold text-white hover:bg-brand-dark">Done</button>
           </div>
         </div>
       )}
@@ -237,6 +282,13 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
                 </span>
               ))}
             </div>
+
+            {isTouchDevice() && (
+              <div className="mt-4 flex items-center gap-2 rounded-xl bg-brand/5 px-3 py-2.5 text-xs text-brand">
+                <RotateCw className="h-4 w-4 shrink-0" />
+                <span>Rotate to landscape and drive with the on-screen pad. Adjust it any time from <b>Settings</b> <Settings className="inline h-3 w-3" />.</span>
+              </div>
+            )}
 
             {config.difficulties && (
               <div className="mt-5">
@@ -317,15 +369,43 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
   );
 }
 
-function TouchBtn({ label, onDown, onUp, small, wide }: { label: string; onDown: () => void; onUp: () => void; small?: boolean; wide?: boolean }) {
+type BtnSize = 'sm' | 'md' | 'lg' | 'xl';
+type BtnTone = 'default' | 'gas' | 'brake' | 'signal';
+
+const BTN_SIZES: Record<BtnSize, string> = {
+  sm: 'h-12 w-12 text-sm',
+  md: 'h-16 w-16 text-xl',
+  lg: 'h-[4.5rem] w-[4.5rem] text-3xl',
+  xl: 'h-24 w-24 text-4xl',
+};
+
+const BTN_TONES: Record<BtnTone, string> = {
+  default: 'bg-black/50 active:bg-brand',
+  gas: 'bg-go/85 active:bg-go shadow-lg shadow-go/30',
+  brake: 'bg-red-600/85 active:bg-red-600 shadow-lg shadow-red-600/30',
+  signal: 'bg-black/50 active:bg-amber-500',
+};
+
+function TouchBtn({
+  label,
+  onDown,
+  onUp,
+  size = 'lg',
+  tone = 'default',
+}: {
+  label: React.ReactNode;
+  onDown: () => void;
+  onUp: () => void;
+  size?: BtnSize;
+  tone?: BtnTone;
+}) {
   return (
     <button
-      className={`pointer-events-auto flex items-center justify-center rounded-2xl bg-black/50 font-bold text-white backdrop-blur active:bg-brand ${
-        wide ? 'h-14 w-full px-6 text-xs' : small ? 'h-11 w-11 text-sm' : 'h-14 w-14 text-xl'
-      }`}
+      className={`pointer-events-auto flex select-none items-center justify-center rounded-2xl font-bold leading-none text-white backdrop-blur ${BTN_SIZES[size]} ${BTN_TONES[tone]}`}
       onPointerDown={(e) => { e.preventDefault(); onDown(); }}
       onPointerUp={(e) => { e.preventDefault(); onUp(); }}
       onPointerLeave={() => onUp()}
+      onPointerCancel={() => onUp()}
       onContextMenu={(e) => e.preventDefault()}
     >
       {label}

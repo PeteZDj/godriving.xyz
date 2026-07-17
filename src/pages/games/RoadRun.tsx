@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Play } from 'lucide-react';
 import { GameOver } from '../../components/GameOver';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { usePrefs, shouldShowControls, vibrate } from '../../lib/prefs';
 
 const LANES = 3;
 const W = 360;
@@ -13,6 +14,8 @@ interface Obstacle { lane: number; y: number; type: 'car' | 'coin'; color: strin
 
 export default function RoadRun() {
   const { refresh } = useAuth();
+  const { prefs } = usePrefs();
+  const showTouch = shouldShowControls(prefs.controls);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [running, setRunning] = useState(false);
   const [over, setOver] = useState(false);
@@ -35,7 +38,28 @@ export default function RoadRun() {
 
   const move = (dir: -1 | 1) => {
     const s = state.current;
-    s.lane = Math.max(0, Math.min(LANES - 1, s.lane + dir));
+    const next = Math.max(0, Math.min(LANES - 1, s.lane + dir));
+    if (next !== s.lane) vibrate(prefs.haptics);
+    s.lane = next;
+  };
+
+  // Crisp rendering on high-DPI screens: scale the backing store by devicePixelRatio.
+  function setupCanvas() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const d = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = Math.round(W * d);
+    canvas.height = Math.round(H * d);
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+  }
+
+  // Tap the left/right half of the track to change lanes.
+  const tapSteer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!state.current.alive) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    move(e.clientX - rect.left < rect.width / 2 ? -1 : 1);
   };
 
   useEffect(() => {
@@ -52,6 +76,7 @@ export default function RoadRun() {
     s.lane = 1; s.obstacles = []; s.speed = 3; s.dist = 0; s.coins = 0;
     s.spawnT = 0; s.dash = 0; s.alive = true; s.score = 0;
     setScore(0); setReward(null); setOver(false); setRunning(true);
+    setupCanvas();
     loop();
   }
 
@@ -184,7 +209,14 @@ export default function RoadRun() {
         </div>
 
         <div className="relative mx-auto overflow-hidden rounded-3xl border-4 border-ink shadow-xl" style={{ width: W, maxWidth: '100%' }}>
-          <canvas ref={canvasRef} width={W} height={H} className="block w-full" />
+          <canvas
+            ref={canvasRef}
+            width={W}
+            height={H}
+            onPointerDown={tapSteer}
+            className="block w-full"
+            style={{ touchAction: 'none' }}
+          />
           {!running && !over && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/60 text-white">
               <p className="px-8 text-center text-sm text-white/80">Stay in your lane, avoid cars, and collect coins for bonus points.</p>
@@ -195,14 +227,18 @@ export default function RoadRun() {
           )}
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <button onClick={() => move(-1)} className="flex items-center justify-center gap-1 rounded-2xl bg-black/5 py-5 font-semibold text-ink active:bg-black/10">
-            <ChevronLeft className="h-6 w-6" /> Left
-          </button>
-          <button onClick={() => move(1)} className="flex items-center justify-center gap-1 rounded-2xl bg-black/5 py-5 font-semibold text-ink active:bg-black/10">
-            Right <ChevronRight className="h-6 w-6" />
-          </button>
-        </div>
+        <p className="mt-3 text-center text-xs text-ink/45">Tap the left or right half of the road to switch lanes — or use the buttons / arrow keys.</p>
+
+        {showTouch && (
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <button onClick={() => move(-1)} className="flex items-center justify-center gap-1 rounded-2xl bg-black/5 py-6 text-lg font-semibold text-ink active:bg-brand active:text-white">
+              <ChevronLeft className="h-7 w-7" /> Left
+            </button>
+            <button onClick={() => move(1)} className="flex items-center justify-center gap-1 rounded-2xl bg-black/5 py-6 text-lg font-semibold text-ink active:bg-brand active:text-white">
+              Right <ChevronRight className="h-7 w-7" />
+            </button>
+          </div>
+        )}
       </div>
 
       {over && <GameOver title="Crashed!" score={score} reward={reward} onReplay={start} />}

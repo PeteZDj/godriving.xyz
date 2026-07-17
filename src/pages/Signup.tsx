@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { UserPlus, Loader2 } from 'lucide-react';
+import { UserPlus, Loader2, MapPin, Check } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../lib/auth';
 import { AuthShell, Field } from './Login';
+import { getPosition, reverseGeocode } from '../lib/geo';
+
+const COUNTRIES = ['Kenya', 'Uganda', 'Tanzania', 'Rwanda', 'Nigeria', 'Ghana', 'South Africa', 'Other'];
 
 export default function Signup() {
   const { signup, loginWithGoogle } = useAuth();
@@ -11,8 +14,30 @@ export default function Signup() {
   const [form, setForm] = useState({ name: '', email: '', password: '', city: '', country: 'Kenya' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [locBusy, setLocBusy] = useState(false);
+  const [locDone, setLocDone] = useState(false);
 
   const set = (k: string) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const useMyLocation = async () => {
+    setErr('');
+    setLocBusy(true);
+    setLocDone(false);
+    try {
+      const coords = await getPosition();
+      const place = await reverseGeocode(coords);
+      setForm((f) => ({
+        ...f,
+        city: place.city || f.city,
+        country: COUNTRIES.includes(place.country) ? place.country : 'Other',
+      }));
+      setLocDone(true);
+    } catch (e: any) {
+      setErr(e.message || 'Could not detect your location.');
+    } finally {
+      setLocBusy(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,20 +84,40 @@ export default function Signup() {
         <Field label="Full name" value={form.name} onChange={set('name')} placeholder="Jane Wanjiru" />
         <Field label="Email" type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" />
         <Field label="Password" type="password" value={form.password} onChange={set('password')} placeholder="At least 6 characters" />
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="City" value={form.city} onChange={set('city')} placeholder="Nairobi" required={false} />
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-ink/80">Country</span>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-sm font-medium text-ink/80">Where are you? <span className="font-normal text-ink/40">(optional)</span></span>
+            <button
+              type="button"
+              onClick={useMyLocation}
+              disabled={locBusy}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-60 ${
+                locDone ? 'bg-go/10 text-go-dark' : 'bg-brand/10 text-brand hover:bg-brand/15'
+              }`}
+            >
+              {locBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : locDone ? <Check className="h-3.5 w-3.5" /> : <MapPin className="h-3.5 w-3.5" />}
+              {locBusy ? 'Locating…' : locDone ? 'Located' : 'Use my location'}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              value={form.city}
+              onChange={(e) => set('city')(e.target.value)}
+              placeholder="City e.g. Nairobi"
+              className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/20"
+            />
             <select
               value={form.country}
               onChange={(e) => set('country')(e.target.value)}
               className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
             >
-              {['Kenya', 'Uganda', 'Tanzania', 'Rwanda', 'Nigeria', 'Ghana', 'South Africa', 'Other'].map((c) => (
+              {COUNTRIES.map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </select>
-          </label>
+          </div>
+          <p className="mt-1.5 text-xs text-ink/45">We use this to match you with driving schools near you.</p>
         </div>
         <button
           disabled={busy}

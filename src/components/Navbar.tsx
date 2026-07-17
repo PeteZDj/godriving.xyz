@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { Menu, X, Trophy, Gamepad2, LogOut, LayoutDashboard } from 'lucide-react';
+import { Menu, X, Trophy, Gamepad2, LogOut, LayoutDashboard, Settings } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { Logo } from './Logo';
 
@@ -40,6 +40,18 @@ export function Navbar() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
+          <NavLink
+            to="/settings"
+            aria-label="Game settings"
+            title="Game settings"
+            className={({ isActive }) =>
+              `grid h-9 w-9 place-items-center rounded-full transition-colors ${
+                isActive ? 'bg-brand/10 text-brand' : 'text-ink/60 hover:bg-black/5 hover:text-brand'
+              }`
+            }
+          >
+            <Settings className="h-5 w-5" />
+          </NavLink>
           {user ? (
             <>
               <Link
@@ -91,6 +103,13 @@ export function Navbar() {
                 {l.label}
               </NavLink>
             ))}
+            <NavLink
+              to="/settings"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-ink/80 hover:bg-brand/5"
+            >
+              <Settings className="h-4 w-4" /> Game Settings
+            </NavLink>
             <div className="my-2 h-px bg-black/5" />
             {user ? (
               <>
