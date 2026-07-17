@@ -137,31 +137,62 @@ async function initDb() {
     END $$;
   `);
 
-  const { rows } = await q('SELECT COUNT(*)::int AS c FROM driving_schools');
-  if (rows[0].c === 0) {
-    await seedSchools();
-  }
+  // Geolocation columns for "near me" school matching (idempotent)
+  await q(`ALTER TABLE driving_schools ADD COLUMN IF NOT EXISTS latitude REAL`);
+  await q(`ALTER TABLE driving_schools ADD COLUMN IF NOT EXISTS longitude REAL`);
+
+  await ensureSchools();
 }
 
-async function seedSchools() {
-  const schools = [
-    ['AA Kenya Driving School', 'Kenya', 'Nairobi', 'The Automobile Association of Kenya — nationwide network with certified instructors and modern vehicles.', '+254 709 933 000', 'info@aakenya.co.ke', 15000, 4.8, true, true],
-    ['Glory Driving School', 'Kenya', 'Nairobi', 'Affordable classes across Nairobi with flexible schedules and NTSA-approved curriculum.', '+254 722 000 111', 'hello@glorydriving.co.ke', 12000, 4.6, true, true],
-    ['Petanns Driving School', 'Kenya', 'Nairobi', 'One of Kenya\u2019s largest driving schools with branches countrywide.', '+254 733 222 333', 'info@petanns.ac.ke', 13500, 4.5, true, false],
-    ['Kenya Institute of Highway & Building Technology', 'Kenya', 'Nairobi', 'Professional driver training including heavy commercial vehicles.', '+254 720 444 555', 'admissions@kihbt.ac.ke', 18000, 4.4, true, false],
-    ['Mombasa Coast Driving School', 'Kenya', 'Mombasa', 'Coastal region driver training with English and Swahili instruction.', '+254 711 666 777', 'coast@driving.co.ke', 11000, 4.3, true, false],
-    ['Kampala Safe Drive', 'Uganda', 'Kampala', 'East Africa expansion partner — modern simulators and defensive driving courses.', '+256 700 123 456', 'info@kampalasafedrive.ug', 400000, 4.5, false, true],
-    ['Dar Motion Driving Academy', 'Tanzania', 'Dar es Salaam', 'Swahili-first driver education with a focus on urban road safety.', '+255 754 000 000', 'karibu@darmotion.co.tz', 250000, 4.4, false, false],
-    ['Kigali Road Masters', 'Rwanda', 'Kigali', 'Clean, disciplined driver training aligned with Rwanda road safety standards.', '+250 788 000 000', 'info@kigaliroadmasters.rw', 90000, 4.7, false, true],
-  ];
-  for (const s of schools) {
-    await q(
-      `INSERT INTO driving_schools (name, country, city, description, phone, email, price_from, rating, verified, featured, logo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [...s, `https://placehold.co/160x160/0071BC/ffffff?text=${encodeURIComponent(s[0].split(' ')[0])}`]
-    );
+// Idempotent driving-school catalog. Inserts any missing schools and backfills
+// coordinates on existing rows (without clobbering curated data).
+const SCHOOL_CATALOG = [
+  // name, country, city, description, phone, email, website, price_from, rating, verified, featured, lat, lng
+  ['AA Kenya Driving School', 'Kenya', 'Nairobi', 'The Automobile Association of Kenya — nationwide network with certified instructors and modern vehicles.', '+254 709 933 000', 'info@aakenya.co.ke', 'https://aakenya.co.ke', 15000, 4.8, true, true, -1.2921, 36.8219],
+  ['Glory Driving School', 'Kenya', 'Nairobi', 'Affordable classes across Nairobi with flexible schedules and NTSA-approved curriculum.', '+254 722 000 111', 'hello@glorydriving.co.ke', '', 12000, 4.6, true, true, -1.2864, 36.8172],
+  ['Petanns Driving School', 'Kenya', 'Nairobi', 'One of Kenya\u2019s largest driving schools with branches countrywide.', '+254 733 222 333', 'info@petanns.ac.ke', 'https://petanns.ac.ke', 13500, 4.5, true, false, -1.2833, 36.8167],
+  ['Kenya Institute of Highway & Building Technology', 'Kenya', 'Nairobi', 'Professional driver training including heavy commercial vehicles.', '+254 720 444 555', 'admissions@kihbt.ac.ke', '', 18000, 4.4, true, false, -1.3000, 36.7900],
+  ['Mombasa Coast Driving School', 'Kenya', 'Mombasa', 'Coastal region driver training with English and Swahili instruction.', '+254 711 666 777', 'coast@driving.co.ke', '', 11000, 4.3, true, false, -4.0435, 39.6682],
+  ['Roadmaster Driving School', 'Kenya', 'Nairobi', 'Westlands-based school with automatic & manual lessons and free learner pickup.', '+254 720 111 222', 'info@roadmaster.co.ke', 'https://roadmaster.co.ke', 13000, 4.5, true, false, -1.2649, 36.8058],
+  ['Kisumu Lakeside Driving School', 'Kenya', 'Kisumu', 'Lakeside driver training with patient instructors and weekend classes.', '+254 733 444 555', 'hello@kisumudriving.co.ke', '', 10000, 4.4, true, false, -0.0917, 34.7680],
+  ['Nakuru Rift Valley Driving School', 'Kenya', 'Nakuru', 'Rift Valley\u2019s trusted school for cars, motorbikes and PSV licences.', '+254 711 222 333', 'info@nakurudriving.co.ke', '', 10500, 4.3, true, false, -0.3031, 36.0800],
+  ['Eldoret Highlands Driving School', 'Kenya', 'Eldoret', 'Highlands driver training with modern dual-control vehicles.', '+254 722 333 444', 'eldoret@driving.co.ke', '', 9500, 4.2, true, false, 0.5143, 35.2698],
+  ['Thika Superhighway Driving School', 'Kenya', 'Thika', 'Practical lessons along the Thika superhighway for real-world confidence.', '+254 700 555 666', 'thika@driving.co.ke', '', 9000, 4.1, false, false, -1.0333, 37.0693],
+  ['Malindi Coast Driving School', 'Kenya', 'Malindi', 'Coastal driver education in English and Swahili with flexible timing.', '+254 712 777 888', 'malindi@driving.co.ke', '', 9000, 4.0, false, false, -3.2175, 40.1191],
+  ['Kampala Safe Drive', 'Uganda', 'Kampala', 'East Africa expansion partner — modern simulators and defensive driving courses.', '+256 700 123 456', 'info@kampalasafedrive.ug', '', 400000, 4.5, false, true, 0.3476, 32.5825],
+  ['Dar Motion Driving Academy', 'Tanzania', 'Dar es Salaam', 'Swahili-first driver education with a focus on urban road safety.', '+255 754 000 000', 'karibu@darmotion.co.tz', '', 250000, 4.4, false, false, -6.7924, 39.2083],
+  ['Kigali Road Masters', 'Rwanda', 'Kigali', 'Clean, disciplined driver training aligned with Rwanda road safety standards.', '+250 788 000 000', 'info@kigaliroadmasters.rw', '', 90000, 4.7, false, true, -1.9441, 30.0619],
+  ['Lagos Motorway Driving School', 'Nigeria', 'Lagos', 'Lagos-wide defensive driving and licence prep with certified instructors.', '+234 801 234 5678', 'info@lagosmotorway.ng', 'https://lagosmotorway.ng', 120000, 4.4, false, true, 6.5244, 3.3792],
+  ['Accra Safe Drive Academy', 'Ghana', 'Accra', 'Ghana DVLA-aligned lessons with flexible weekend schedules.', '+233 20 123 4567', 'hello@accrasafedrive.gh', '', 1500, 4.5, false, true, 5.6037, -0.1870],
+  ['Joburg Driving Academy', 'South Africa', 'Johannesburg', 'K53-focused training with mock tests and highway practice.', '+27 11 234 5678', 'info@joburgdriving.co.za', 'https://joburgdriving.co.za', 4500, 4.6, false, true, -26.2041, 28.0473],
+  ['Cape Town Coastal Driving', 'South Africa', 'Cape Town', 'Coastal & mountain-pass driving lessons with experienced instructors.', '+27 21 555 1234', 'drive@capetowncoastal.co.za', '', 4800, 4.5, false, false, -33.9249, 18.4241],
+];
+
+async function ensureSchools() {
+  let inserted = 0;
+  for (const s of SCHOOL_CATALOG) {
+    const [name, country, city, description, phone, email, website, price_from, rating, verified, featured, lat, lng] = s;
+    const logo = `https://placehold.co/160x160/0071BC/ffffff?text=${encodeURIComponent(name.split(' ')[0])}`;
+    const { rows } = await q('SELECT id FROM driving_schools WHERE name=$1', [name]);
+    if (rows.length) {
+      // Backfill coordinates & website on existing rows; keep curated fields intact.
+      await q(
+        `UPDATE driving_schools
+           SET latitude = $2, longitude = $3, website = COALESCE(NULLIF(website, ''), $4)
+         WHERE id = $1`,
+        [rows[0].id, lat, lng, website || null]
+      );
+    } else {
+      await q(
+        `INSERT INTO driving_schools
+           (name, country, city, description, phone, email, website, price_from, rating, verified, featured, logo, latitude, longitude)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [name, country, city, description, phone, email, website || null, price_from, rating, verified, featured, logo, lat, lng]
+      );
+      inserted++;
+    }
   }
-  console.log('Seeded driving schools');
+  console.log(`Ensured driving schools (${inserted} new, ${SCHOOL_CATALOG.length} total)`);
 }
 
 // ---------------- Helpers ----------------

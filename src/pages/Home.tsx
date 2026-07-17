@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
   ArrowRight, Gamepad2, MapPin, ShieldCheck, Trophy, Brain,
-  Car, GraduationCap, Sparkles, Star, Handshake,
+  Car, GraduationCap, Sparkles, Star, Handshake, Navigation, PlayCircle, Smartphone,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { SIGNS } from '../data/signs';
@@ -11,9 +11,21 @@ import { Sign } from '../components/Sign';
 
 const rotatingWords = ['Driving Test', 'Road Signs', 'Highway Code', 'Confidence'];
 
+const DRIVE_LESSONS = [
+  { slug: 'parking', emoji: '🅿️', title: 'Parallel Parking', desc: 'Nail the reverse bay every time.' },
+  { slug: 'roundabout', emoji: '🔄', title: 'Roundabouts', desc: 'Signal, lane & exit like a pro.' },
+  { slug: 'lane-change', emoji: '↔️', title: 'Lane Changes', desc: 'Mirror, signal, manoeuvre.' },
+  { slug: 'emergency', emoji: '🛑', title: 'Emergency Stop', desc: 'React fast, brake safely.' },
+  { slug: 'night', emoji: '🌙', title: 'Night Driving', desc: 'Master lights and low visibility.' },
+  { slug: 'reverse', emoji: '↩️', title: 'Three-Point Turn', desc: 'Turn around in tight spots.' },
+];
+
+interface FeaturedSchool { id: number; name: string; city: string; country: string; logo: string; rating: number }
+
 export default function Home() {
   const [word, setWord] = useState(0);
-  const [stats, setStats] = useState({ learners: 0, schools: 8, gamesPlayed: 0 });
+  const [stats, setStats] = useState({ learners: 0, schools: 18, gamesPlayed: 0 });
+  const [schools, setSchools] = useState<FeaturedSchool[]>([]);
 
   useEffect(() => {
     const t = setInterval(() => setWord((w) => (w + 1) % rotatingWords.length), 2200);
@@ -22,6 +34,7 @@ export default function Home() {
 
   useEffect(() => {
     api('/stats').then(setStats).catch(() => {});
+    api<{ schools: FeaturedSchool[] }>('/schools').then((d) => setSchools((d.schools || []).slice(0, 4))).catch(() => {});
   }, []);
 
   const heroSigns = SIGNS.filter((s) => ['stop', 'yield', 'roundabout', 'children', 'speed-50', 'no-entry'].includes(s.id));
@@ -88,7 +101,7 @@ export default function Home() {
               <div className="grid grid-cols-3 gap-8">
                 <Stat value={`${stats.schools}+`} label="Partner Schools" />
                 <Stat value={`${SIGNS.length}`} label="Road Signs" accent />
-                <Stat value="4 Games" label="& counting" />
+                <Stat value="10 Games" label="& counting" />
               </div>
             </motion.div>
 
@@ -163,6 +176,31 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ---------- HOW IT WORKS ---------- */}
+      <section className="border-y border-black/5 bg-brand/[0.03] py-20">
+        <div className="container mx-auto px-4">
+          <SectionHead eyebrow="How it works" title="From your phone to your licence" sub="Three simple steps — no boring textbooks required." />
+          <div className="relative mt-12 grid gap-8 md:grid-cols-3">
+            {[
+              { n: 1, icon: Gamepad2, title: 'Play & learn', text: 'Sign up free and jump into quick games that teach road signs, rules and real driving moves.' },
+              { n: 2, icon: Trophy, title: 'Earn XP & track progress', text: 'Score points, level up and see exactly where you\u2019re test-ready and where to practise more.' },
+              { n: 3, icon: GraduationCap, title: 'Get matched & pass', text: 'Share your location and we connect you to a trusted school near you to finish behind the wheel.' },
+            ].map((s) => (
+              <div key={s.n} className="relative rounded-2xl border border-black/5 bg-white p-7 shadow-sm">
+                <div className="absolute -top-4 left-7 flex h-9 w-9 items-center justify-center rounded-full bg-brand text-sm font-bold text-white shadow-lg shadow-brand/25">
+                  {s.n}
+                </div>
+                <div className="mb-4 mt-2 flex h-12 w-12 items-center justify-center rounded-xl bg-go/10 text-go-dark">
+                  <s.icon className="h-6 w-6" />
+                </div>
+                <h3 className="mb-2 font-display text-lg font-bold text-ink">{s.title}</h3>
+                <p className="text-sm leading-relaxed text-ink/60">{s.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ---------- GAMES ---------- */}
       <section className="bg-gradient-to-b from-white to-brand/5 py-20">
         <div className="container mx-auto px-4">
@@ -175,6 +213,67 @@ export default function Home() {
           <div className="mt-8 text-center">
             <Link to="/games" className="inline-flex items-center gap-2 font-semibold text-brand hover:gap-3 transition-all">
               See all games <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ---------- DRIVE SIMULATOR ---------- */}
+      <section className="container mx-auto px-4 py-20">
+        <SectionHead
+          eyebrow="Behind the wheel"
+          title="Practice real manoeuvres in the drive simulator"
+          sub="Six hands-on lessons — steer, signal and park a real car. Plays with keyboard or on-screen touch controls on your phone."
+        />
+        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {DRIVE_LESSONS.map((l) => (
+            <Link
+              key={l.slug}
+              to={`/games/drive/${l.slug}`}
+              className="group flex items-center gap-4 rounded-2xl border border-black/5 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
+            >
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand/10 text-3xl">{l.emoji}</div>
+              <div className="flex-1">
+                <div className="font-display font-bold text-ink">{l.title}</div>
+                <div className="text-sm text-ink/60">{l.desc}</div>
+              </div>
+              <PlayCircle className="h-6 w-6 text-brand/40 transition-colors group-hover:text-brand" />
+            </Link>
+          ))}
+        </div>
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Link to="/games" className="inline-flex items-center gap-2 rounded-xl bg-brand px-7 py-3.5 font-semibold text-white shadow-lg shadow-brand/25 hover:bg-brand-dark">
+            <Gamepad2 className="h-5 w-5" /> Open the arcade
+          </Link>
+          <Link to="/settings" className="inline-flex items-center gap-2 rounded-xl border-2 border-brand px-7 py-3.5 font-semibold text-brand hover:bg-brand/5">
+            <Smartphone className="h-5 w-5" /> Mobile controls
+          </Link>
+        </div>
+      </section>
+
+      {/* ---------- SCHOOLS NEAR YOU ---------- */}
+      <section className="bg-gradient-to-b from-brand/5 to-white py-20">
+        <div className="container mx-auto px-4">
+          <SectionHead eyebrow="Our Network" title="Then finish at a real driving school" sub="When you're test-ready, get matched with a verified school near you — across Kenya and beyond." />
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {(schools.length ? schools : Array.from({ length: 4 })).map((s: any, i) => (
+              s && s.id ? (
+                <Link key={s.id} to="/schools" className="flex items-center gap-3 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg">
+                  <img src={s.logo} alt={s.name} className="h-12 w-12 rounded-xl object-cover" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold text-ink">{s.name}</div>
+                    <div className="flex items-center gap-1 text-xs text-ink/50"><MapPin className="h-3 w-3" /> {s.city}</div>
+                  </div>
+                  <span className="flex items-center gap-0.5 text-sm font-medium text-amber-500"><Star className="h-3.5 w-3.5 fill-amber-400" />{s.rating}</span>
+                </Link>
+              ) : (
+                <div key={i} className="h-[76px] animate-pulse rounded-2xl border border-black/5 bg-white/60" />
+              )
+            ))}
+          </div>
+          <div className="mt-8 text-center">
+            <Link to="/schools" className="inline-flex items-center gap-2 rounded-xl bg-go px-7 py-3.5 font-semibold text-white shadow-lg shadow-go/25 hover:bg-go-dark">
+              <Navigation className="h-5 w-5" /> Find schools near me
             </Link>
           </div>
         </div>

@@ -12,7 +12,6 @@ Thumbs.db
 Desktop.ini
 .cursor/
 .vscode/
-.env
 *.local
 *.swp
 *.swo
@@ -29,3 +28,4 @@ Desktop.ini
 
 # Keep the shippable APK tracked even though bin/ is ignored
 !public/downloads/godriving.apk
+config.bat
