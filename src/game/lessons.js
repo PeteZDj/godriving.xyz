@@ -151,16 +151,46 @@ function createParking(g, rt) {
 function createRoundabout(g, rt) {
   const TOTAL_ROUNDS = 4;
   const DIFF = {
-    easy: { traffic: false, label: 'Easy' },
-    medium: { traffic: { nbCount: 4, sbCount: 4, speedRange: [55, 90], spacing: 380 }, label: 'Medium' },
-    hard: { traffic: { nbCount: 8, sbCount: 8, speedRange: [80, 120], spacing: 240 }, label: 'Hard' },
+    easy: { traffic: false, ring: 0, label: 'Easy' },
+    medium: { traffic: { nbCount: 3, sbCount: 3, speedRange: [55, 90], spacing: 380 }, ring: 2, label: 'Medium' },
+    hard: { traffic: { nbCount: 6, sbCount: 6, speedRange: [80, 120], spacing: 260 }, ring: 4, label: 'Hard' },
   };
   let difficulty = 'medium';
   let roundIdx = 0, totalScore = 0, correctCount = 0, wrongAttempts = 0, targetExit = 1, state = 'idle', exitOrder = [];
+  // Driving-side + lane-discipline tracking (reset per round).
+  let sign = 1;               // +1 RHT, -1 LHT — mirrors the approach lane
+  let circ = -1;              // ring circulation: -1 counter-clockwise (RHT), +1 clockwise (LHT)
+  let lastRingLane = null, laneChanges = 0, wrongLaneTime = 0, onRing = false;
+  let approachSignalOk = null, gaveWay = true, collided = false;
+  let ringCars = [];
+  let lastInfoAt = 0;
   const timers = timerBag();
 
   const shuffled = (arr) => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const exitInfo = (id) => g.ROUNDABOUT.exits.find((e) => e.id === id);
+  const laneW = () => (g.RA_OUTER - g.RA_INNER) / g.RA_LANES;
+
+  // The exit's direction relative to a northbound entry (from the south).
+  function relDir(id) { return id === 1 ? 'right' : id === 2 ? 'straight' : id === 3 ? 'left' : 'uturn'; }
+  // Signal + lane guidance, mirrored for the driving side.
+  function guidance(id) {
+    const rel = relDir(id);
+    const left = g.drive === 'left';
+    let approachSignal = 'none', lane = 'outer';
+    if (rel === 'right') { approachSignal = 'right'; lane = left ? 'inner' : 'outer'; }
+    else if (rel === 'left') { approachSignal = 'left'; lane = left ? 'outer' : 'inner'; }
+    else if (rel === 'straight') { approachSignal = 'none'; lane = 'outer'; }
+    else { approachSignal = left ? 'right' : 'left'; lane = 'inner'; } // U-turn: take the far side
+    const exitSignal = left ? 'left' : 'right'; // you exit toward your kerb side
+    return { rel, approachSignal, exitSignal, lane };
+  }
+  const currentSignal = () => (g.car.signalLeft ? 'left' : g.car.signalRight ? 'right' : 'none');
+  function ringLaneOf() {
+    const d = g.dist(g.car.x, g.car.y, g.ROUNDABOUT.x, g.ROUNDABOUT.y);
+    return Math.max(0, Math.min(g.RA_LANES - 1, Math.floor((d - g.RA_INNER) / laneW())));
+  }
+  const laneZone = (idx) => (idx >= g.RA_LANES / 2 ? 'outer' : 'inner');
+
   function exitMarker(id) {
     const e = exitInfo(id);
     const a = e.angle * Math.PI / 180;
@@ -168,21 +198,115 @@ function createRoundabout(g, rt) {
     return { x: g.ROUNDABOUT.x + Math.cos(a) * r, y: g.ROUNDABOUT.y + Math.sin(a) * r };
   }
   function resetCarToStart() { g.resetCar(); g.car.signalLeft = false; g.car.signalRight = false; }
+  function resetRoundTracking() {
+    lastRingLane = null; laneChanges = 0; wrongLaneTime = 0; onRing = false;
+    approachSignalOk = null; gaveWay = true; collided = false;
+  }
+
+  /* ---- ring (circulating) traffic for give-way practice ---- */
+  function spawnRing(n) {
+    ringCars = [];
+    const colors = ['#ef4444', '#22c55e', '#eab308', '#a855f7', '#06b6d4', '#fb7185'];
+    for (let i = 0; i < n; i++) {
+      ringCars.push({
+        a: Math.random() * Math.PI * 2,
+        r: g.RA_INNER + laneW() * (0.6 + (i % g.RA_LANES) * 0.7),
+        w: 0.32 + Math.random() * 0.22,
+        color: colors[i % colors.length],
+      });
+    }
+  }
+  function updateRing(dt) { for (const rc of ringCars) rc.a += circ * rc.w * dt; }
+  function drawRing() {
+    for (const rc of ringCars) {
+      const x = g.ROUNDABOUT.x + Math.cos(rc.a) * rc.r;
+      const y = g.ROUNDABOUT.y + Math.sin(rc.a) * rc.r;
+      const heading = Math.atan2(circ * Math.cos(rc.a), -circ * Math.sin(rc.a));
+      g.drawCarRect(x, y, heading, rc.color, 34, 60);
+    }
+  }
+  // Radians until a ring car reaches the south entry (angle = +90° in y-down space).
+  function gapToEntry(rc) {
+    let d = circ > 0 ? (Math.PI / 2 - rc.a) : (rc.a - Math.PI / 2);
+    d = ((d % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    return d;
+  }
+  function conflictAtEntry() {
+    for (const rc of ringCars) {
+      if (gapToEntry(rc) < 0.55 && rc.r > g.RA_INNER + laneW() * 1.2) return true;
+    }
+    return false;
+  }
 
   function setupMission() {
     const e = exitInfo(targetExit);
     const m = exitMarker(targetExit);
+    const gd = guidance(targetExit);
+    const relWord = gd.rel === 'straight' ? 'straight ahead' : gd.rel === 'uturn' ? 'all the way round (U-turn)' : `to the ${gd.rel}`;
     g.setMission({
       title: `Round ${roundIdx}: Take Exit ${targetExit} (${e.name})`,
-      desc: `Drive north, signal ${targetExit === 4 ? '➡ continue straight' : targetExit === 1 ? '➡ right at exit 1' : '➡ left for exits 2/3'} and leave at the ${e.name.toLowerCase()} exit.`,
+      desc: `Give way on entry, keep ${gd.lane === 'outer' ? 'the outside lane' : 'an inner lane'}, and leave ${relWord}.`,
       step: `<span class="pill">Round ${roundIdx} of ${TOTAL_ROUNDS}</span> Difficulty: ${DIFF[difficulty].label}`,
       markers: [
-        g.makeMarker(g.HW_CENTER_X + 100, g.HW_NORTH_Y + 350, { color: '#38bdf8', label: 'APPROACH' }),
+        g.makeMarker(g.HW_CENTER_X + sign * 100, g.HW_NORTH_Y + 350, { color: '#38bdf8', label: 'APPROACH' }),
         g.makeMarker(m.x, m.y, { kind: 'finish', color: '#fbbf24', label: `EXIT ${targetExit}`, r: 50 }),
       ],
-      onMarker(mk) { if (mk.kind === 'finish') judgeRound(); },
+      onMarker(mk) {
+        if (mk.label === 'APPROACH') approachSignalOk = currentSignal() === guidance(targetExit).approachSignal;
+        if (mk.kind === 'finish') judgeRound();
+      },
       check() { return false; },
     });
+  }
+
+  const chip = (ok, txt) => `<span style="color:${ok ? '#4ade80' : '#f87171'}">${ok ? '✓' : '✗'} ${txt}</span>`;
+  function updateInfo() {
+    const now = performance.now();
+    if (now - lastInfoAt < 140) return;
+    lastInfoAt = now;
+    const gd = guidance(targetExit);
+    const sigNow = currentSignal();
+    const sigLabel = (s) => (s === 'none' ? 'none' : s === 'left' ? 'left ◀' : 'right ▶');
+    const onRoundNow = g.onRoundabout(g.car.x, g.car.y);
+    const yourLane = onRoundNow ? laneZone(ringLaneOf()) : '—';
+    const laneOk = !onRoundNow || yourLane === gd.lane;
+    const wantSig = onRoundNow ? gd.exitSignal : gd.approachSignal;
+    const sigOk = wantSig === 'none' ? sigNow === 'none' : sigNow === wantSig;
+    const lines = [
+      `<b>${circ > 0 ? '↻ Clockwise' : '↺ Counter-clockwise'}</b> · exits leave to your <b>${g.drive === 'left' ? 'left' : 'right'}</b>`,
+      chip(sigOk, `Signal: want ${sigLabel(wantSig)}${sigNow !== wantSig ? ` (you: ${sigLabel(sigNow)})` : ''}`),
+      chip(laneOk, `Lane: use ${gd.lane}${onRoundNow ? ` (you: ${yourLane})` : ''}`),
+      `Lane changes: <b>${laneChanges}</b>` + (laneChanges > 2 ? ' <span style="color:#fbbf24">(minimise!)</span>' : ''),
+      gaveWay ? '<span style="color:#4ade80">✓ Gave way on entry</span>' : '<span style="color:#f87171">✗ Missed give-way</span>',
+    ];
+    g.setInfo(lines.join('<br>'));
+  }
+
+  function perFrame(dt) {
+    updateRing(dt);
+    // Collisions with circulating traffic.
+    if (!collided) {
+      for (const rc of ringCars) {
+        const x = g.ROUNDABOUT.x + Math.cos(rc.a) * rc.r;
+        const y = g.ROUNDABOUT.y + Math.sin(rc.a) * rc.r;
+        if (g.dist(g.car.x, g.car.y, x, y) < 34) { collided = true; g.audio.crash(); g.car.speed *= 0.35; rt.notify('Collision! Give way to traffic already on the roundabout.', 'fail', 1600); break; }
+      }
+    }
+    // Lane tracking while on the ring.
+    const nowOnRing = g.onRoundabout(g.car.x, g.car.y);
+    if (nowOnRing) {
+      if (!onRing) { // just entered — evaluate give-way
+        onRing = true;
+        if (conflictAtEntry() && g.car.speed > 40) { gaveWay = false; g.audio.buzz(); rt.notify("You didn't give way!", 'fail', 1500); }
+      }
+      const lane = ringLaneOf();
+      if (lastRingLane !== null && lane !== lastRingLane) laneChanges++;
+      lastRingLane = lane;
+      if (laneZone(lane) !== guidance(targetExit).lane) wrongLaneTime += dt;
+    } else if (onRing && !g.onRoundabout(g.car.x, g.car.y, 30)) {
+      onRing = false; lastRingLane = null;
+    }
+    updateInfo();
   }
 
   function judgeRound() {
@@ -190,25 +314,34 @@ function createRoundabout(g, rt) {
     state = 'judged';
     const c = g.car;
     const e = exitInfo(targetExit);
+    const gd = guidance(targetExit);
     const a = e.angle * Math.PI / 180;
     const carAngle = Math.atan2(c.y - g.ROUNDABOUT.y, c.x - g.ROUNDABOUT.x);
     const correct = Math.abs(g.norm(carAngle - a)) < Math.PI / 4;
     if (correct) {
       correctCount++;
       let score = 100;
-      const expectedSignal = targetExit === 1 ? 'right' : targetExit === 4 ? 'none' : 'left';
-      if ((expectedSignal === 'left' && c.signalLeft) || (expectedSignal === 'right' && c.signalRight) || (expectedSignal === 'none' && !c.signalLeft && !c.signalRight)) score += 25;
+      const bits = [];
+      if (approachSignalOk) { score += 15; }
+      const exitSigOk = currentSignal() === gd.exitSignal;
+      if (exitSigOk) { score += 15; bits.push('exit signal'); }
+      if (wrongLaneTime < 0.6) { score += 15; bits.push('correct lane'); }
+      if (laneChanges <= 1) { score += 10; bits.push('smooth lane discipline'); }
+      else score -= Math.min(20, (laneChanges - 1) * 5);
+      if (!gaveWay) score -= 20;
+      if (collided) score -= 20;
+      score = Math.max(10, score);
       totalScore += score;
       rt.setScore(totalScore);
       rt.setBest(`${correctCount}/${TOTAL_ROUNDS}`);
-      rt.notify(`Exit ${targetExit} ✓  +${score} pts`, 'success', 1700);
+      rt.notify(`Exit ${targetExit} ✓  +${score} pts${bits.length ? ' — ' + bits.join(', ') : ''}`, 'success', 2100);
       g.audio.complete();
-      timers.later(nextRound, 1900);
+      timers.later(nextRound, 2000);
     } else {
       wrongAttempts++;
       rt.notify('Wrong exit. Resetting…', 'fail', 1800);
       g.audio.fail();
-      timers.later(() => { state = 'approaching'; setupMission(); resetCarToStart(); }, 1600);
+      timers.later(() => { state = 'approaching'; resetRoundTracking(); resetCarToStart(); setupMission(); }, 1600);
     }
   }
 
@@ -217,6 +350,7 @@ function createRoundabout(g, rt) {
     if (roundIdx > TOTAL_ROUNDS) { showEnd(); return; }
     targetExit = exitOrder[roundIdx - 1];
     state = 'approaching';
+    resetRoundTracking();
     resetCarToStart();
     setupMission();
     rt.setRound(`${roundIdx}/${TOTAL_ROUNDS}`);
@@ -261,14 +395,19 @@ function createRoundabout(g, rt) {
       difficulty = diff || 'medium';
       totalScore = 0; correctCount = 0; wrongAttempts = 0; roundIdx = 0;
       exitOrder = shuffled([1, 2, 3, 4]);
+      sign = g.drive === 'left' ? -1 : 1;
+      circ = g.drive === 'left' ? 1 : -1;
       timers.clearAll();
       g.init({
-        start: { x: g.HW_CENTER_X + 120, y: g.HW_SOUTH_Y - 80, heading: -Math.PI / 2 },
+        start: { x: g.HW_CENTER_X + sign * 120, y: g.HW_SOUTH_Y - 80, heading: -Math.PI / 2 },
         zoom: 0.95, parkedSpots: [0, 3, 5, 8, 10], traffic: DIFF[difficulty].traffic,
-        onReset: () => { resetCarToStart(); state = 'approaching'; setupMission(); rt.notify('Round reset', 'info', 1000); },
+        onReset: () => { resetRoundTracking(); resetCarToStart(); state = 'approaching'; setupMission(); rt.notify('Round reset', 'info', 1000); },
       });
       g.rememberStart();
+      spawnRing(DIFF[difficulty].ring);
+      g.onUpdate(perFrame);
       g.onPreRender(drawTargetCallout);
+      g.onDrawObjects(drawRing);
       g.start();
       nextRound();
     },
@@ -285,17 +424,22 @@ function createLaneChange(g, rt) {
     hard: { traffic: { nbCount: 12, sbCount: 12, speedRange: [90, 130], spacing: 210 }, label: 'Hard', collisionPx: 32 },
   };
   let difficulty = 'medium';
-  let totalScore = 0, combo = 0, bestCombo = 0, crashes = 0, targetLane = 7, lanesCleared = 0, inLaneTime = 0, collisionCooldown = 0;
+  let totalScore = 0, combo = 0, bestCombo = 0, crashes = 0, targetLane = 3, lanesCleared = 0, inLaneTime = 0, collisionCooldown = 0;
+  let expectSide = 'right';
   const timers = timerBag();
 
-  const laneCenterX = (idx) => g.HW_CENTER_X + g.MEDIAN / 2 + (idx - 4) * g.LANE_WIDTH + g.LANE_WIDTH / 2;
+  // Lanes numbered 0..3 by distance from the median; the driving side mirrors X.
+  const dsign = () => (g.drive === 'left' ? -1 : 1);
+  const kerbSide = () => (g.drive === 'left' ? 'left' : 'right');
+  const medianSide = () => (g.drive === 'left' ? 'right' : 'left');
+  const laneCenterX = (p) => g.HW_CENTER_X + dsign() * (g.MEDIAN / 2 + p * g.LANE_WIDTH + g.LANE_WIDTH / 2);
   function currentLaneIndex() {
-    for (let i = 4; i <= 7; i++) if (Math.abs(g.car.x - laneCenterX(i)) < g.LANE_WIDTH / 2) return i;
+    for (let p = 0; p <= 3; p++) if (Math.abs(g.car.x - laneCenterX(p)) < g.LANE_WIDTH / 2) return p;
     return -1;
   }
   function pickNewTarget(prev) {
     const cand = [];
-    for (let i = 4; i <= 7; i++) { if (i === prev) continue; cand.push({ i, w: 1 / (1 + Math.abs(i - prev) * 0.7) }); }
+    for (let p = 0; p <= 3; p++) { if (p === prev) continue; cand.push({ i: p, w: 1 / (1 + Math.abs(p - prev) * 0.7) }); }
     const tot = cand.reduce((s, c) => s + c.w, 0);
     let r = Math.random() * tot;
     for (const c of cand) { r -= c.w; if (r <= 0) return c.i; }
@@ -305,9 +449,10 @@ function createLaneChange(g, rt) {
   function setMission() {
     const targetX = laneCenterX(targetLane);
     const ahead = g.car.y - 800;
+    const key = expectSide === 'left' ? 'LEFT (Q)' : 'RIGHT (E)';
     g.setMission({
-      title: `Move into LANE ${targetLane - 3} (from the median)`,
-      desc: `Signal ${targetLane < currentLaneIndex() ? 'LEFT (Q)' : 'RIGHT (E)'} first, then change lanes safely. Hold the lane for 1s to clear.`,
+      title: `Move into LANE ${targetLane + 1} (from the median)`,
+      desc: `Signal ${key} first, then change lanes safely. Hold the lane for 1s to clear.`,
       step: `<span class="pill">Lane ${lanesCleared + 1} of ${LANES_PER_RUN}</span> Difficulty: ${DIFF[difficulty].label}`,
       markers: [g.makeMarker(targetX, ahead, { kind: 'finish', color: '#a855f7', label: 'TARGET LANE', r: 36 })],
       onMarker() {},
@@ -317,8 +462,10 @@ function createLaneChange(g, rt) {
 
   function pickNextLane() {
     if (lanesCleared >= LANES_PER_RUN) { showEnd(); return; }
-    const cur = currentLaneIndex();
-    targetLane = pickNewTarget(cur === -1 ? 7 : cur);
+    const cur = currentLaneIndex() === -1 ? 3 : currentLaneIndex();
+    targetLane = pickNewTarget(cur);
+    // Moving toward the kerb (higher lane number) signals the kerb side; toward the median the other way.
+    expectSide = targetLane > cur ? kerbSide() : medianSide();
     inLaneTime = 0;
     setMission();
   }
@@ -328,8 +475,7 @@ function createLaneChange(g, rt) {
     if (combo > bestCombo) bestCombo = combo;
     let pts = 50 + (combo - 1) * 10;
     const c = g.car;
-    const expectLeft = !(currentLaneIndex() < targetLane);
-    if (expectLeft ? c.signalLeft : c.signalRight) pts += 25;
+    if (expectSide === 'left' ? c.signalLeft : c.signalRight) pts += 25;
     totalScore += pts;
     rt.setScore(totalScore);
     rt.setBest('×' + combo);
@@ -367,8 +513,12 @@ function createLaneChange(g, rt) {
         if (g.dist(c.x, c.y, t.x, t.y) < DIFF[difficulty].collisionPx + 18) { registerCrash(); break; }
       }
     }
-    if (c.x < g.HW_CENTER_X + g.MEDIAN / 2 + 4) { c.x = g.HW_CENTER_X + g.MEDIAN / 2 + 6; c.speed = Math.min(c.speed, 60); }
-    if (c.x > g.HW_CENTER_X + g.HW_HALF - 4) { c.x = g.HW_CENTER_X + g.HW_HALF - 6; c.speed = Math.min(c.speed, 60); }
+    const medianEdge = g.HW_CENTER_X + dsign() * (g.MEDIAN / 2);
+    const kerbEdge = g.HW_CENTER_X + dsign() * g.HW_HALF;
+    const lo = Math.min(medianEdge, kerbEdge) + 6;
+    const hi = Math.max(medianEdge, kerbEdge) - 6;
+    if (c.x < lo) { c.x = lo; c.speed = Math.min(c.speed, 60); }
+    if (c.x > hi) { c.x = hi; c.speed = Math.min(c.speed, 60); }
     if (c.y < g.HW_NORTH_Y + 400) c.y = g.HW_SOUTH_Y - 300;
   }
 
@@ -405,9 +555,10 @@ function createLaneChange(g, rt) {
     start(diff) {
       difficulty = diff || 'medium';
       totalScore = 0; combo = 0; bestCombo = 0; crashes = 0; lanesCleared = 0; inLaneTime = 0; collisionCooldown = 0;
+      targetLane = 3;
       timers.clearAll();
       g.init({
-        start: { x: laneCenterX(7), y: g.HW_SOUTH_Y - 350, heading: -Math.PI / 2 },
+        start: { x: laneCenterX(3), y: g.HW_SOUTH_Y - 350, heading: -Math.PI / 2 },
         zoom: 1.0, parkedSpots: [0, 3, 5, 8, 10], traffic: DIFF[difficulty].traffic,
         onReset: () => { combo = 0; rt.setBest('×0'); rt.notify('Reset', 'info', 800); },
       });
@@ -523,7 +674,7 @@ function createEmergency(g, rt) {
       totalScore = 0; bestRt = Infinity; hits = 0; roundIdx = 0;
       timers.clearAll();
       g.init({
-        start: { x: g.HW_CENTER_X + 120, y: g.HW_SOUTH_Y - 100, heading: -Math.PI / 2 },
+        start: { x: g.HW_CENTER_X + (g.drive === 'left' ? -1 : 1) * 120, y: g.HW_SOUTH_Y - 100, heading: -Math.PI / 2 },
         zoom: 0.95, parkedSpots: [0, 3, 5, 8, 10], traffic: false,
         onReset: () => { cones = []; collided = false; roundDone = false; state = 'accelerating'; hazardSpawnTime = 0; brakeStartTime = 0; g.resetCar(); rt.notify('Round reset', 'info', 800); },
       });
@@ -772,8 +923,8 @@ export const LESSONS = [
   {
     id: 'drive_roundabout', slug: 'roundabout', title: 'Roundabout Master', emoji: '🔄',
     tag: 'Navigation', accent: '#38bdf8',
-    short: 'Read the call-out, pick your lane, signal, and leave at the right exit.',
-    intro: 'The instructor calls a random exit each round. Approach the roundabout, signal correctly, and leave at the right exit. Wrong exit = retry.',
+    short: 'Give way, pick the right lane, signal, and read live lane-change feedback — mirrored to your country\u2019s driving side.',
+    intro: 'The instructor calls a random exit each round. Give way to circulating traffic on entry, choose the correct lane, signal, and leave at the right exit. A live panel tracks your lane, signal and lane-changes. The whole roundabout mirrors your local driving side (Kenya = left / drive clockwise).',
     controls: baseControls, difficulties: DIFFS, createLesson: createRoundabout,
   },
   {

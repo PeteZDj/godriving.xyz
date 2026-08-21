@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MapPin, Star, BadgeCheck, Search, X, Send, Loader2, Navigation, Globe } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { MapPin, Star, BadgeCheck, Search, X, Send, Loader2, Navigation, Globe, Phone, Mail, GraduationCap, ArrowRight } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { getPosition, haversineKm, Coords } from '../lib/geo';
@@ -28,6 +29,7 @@ export default function Schools() {
   const [country, setCountry] = useState('');
   const [search, setSearch] = useState('');
   const [active, setActive] = useState<School | null>(null);
+  const [detail, setDetail] = useState<School | null>(null);
   const [coords, setCoords] = useState<Coords | null>(null);
   const [locBusy, setLocBusy] = useState(false);
   const [locErr, setLocErr] = useState('');
@@ -117,11 +119,28 @@ export default function Schools() {
         {coords && <p className="text-center text-sm text-go-dark">Showing schools sorted by distance from you.</p>}
       </div>
 
-      <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="mx-auto mt-8 flex max-w-3xl flex-col items-center justify-between gap-3 rounded-2xl border border-brand/15 bg-brand/[0.04] px-5 py-4 sm:flex-row">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand/10 text-brand"><GraduationCap className="h-5 w-5" /></div>
+          <div>
+            <div className="text-sm font-semibold text-ink">Run a driving school?</div>
+            <div className="text-xs text-ink/60">Claim your listing and manage students in one place.</div>
+          </div>
+        </div>
+        <Link to="/school" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark">
+          Manage your school <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+
+      <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {displayed.map((s) => {
           const dist = (s as any)._dist as number | undefined;
           return (
-          <div key={s.id} className="flex flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-shadow hover:shadow-lg">
+          <div
+            key={s.id}
+            onClick={() => setDetail(s)}
+            className="flex cursor-pointer flex-col rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand/20 hover:shadow-lg"
+          >
             <div className="mb-4 flex items-start gap-4">
               <img src={s.logo} alt={s.name} className="h-14 w-14 rounded-xl object-cover" />
               <div className="flex-1">
@@ -148,16 +167,23 @@ export default function Schools() {
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setActive(s)}
+                onClick={(e) => { e.stopPropagation(); setActive(s); }}
                 className="flex-1 rounded-xl bg-brand/10 py-2.5 text-sm font-semibold text-brand hover:bg-brand/15"
               >
                 Get connected
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setDetail(s); }}
+                className="rounded-xl bg-black/5 px-4 text-sm font-semibold text-ink/70 hover:bg-black/10 hover:text-brand"
+              >
+                Details
               </button>
               {s.website && (
                 <a
                   href={s.website}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
                   aria-label={`Visit ${s.name} website`}
                   className="grid w-11 place-items-center rounded-xl bg-black/5 text-ink/60 hover:bg-black/10 hover:text-brand"
                 >
@@ -172,6 +198,78 @@ export default function Schools() {
       {displayed.length === 0 && <p className="mt-10 text-center text-ink/50">No schools found. Try a different search.</p>}
 
       {active && <LeadModal school={active} user={user} onClose={() => setActive(null)} />}
+      {detail && (
+        <SchoolDetailModal
+          school={detail}
+          onClose={() => setDetail(null)}
+          onConnect={() => { setActive(detail); setDetail(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SchoolDetailModal({ school, onClose, onConnect }: { school: School; onClose: () => void; onConnect: () => void }) {
+  const mapUrl =
+    school.latitude != null && school.longitude != null
+      ? `https://www.google.com/maps/search/?api=1&query=${school.latitude},${school.longitude}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${school.name} ${school.city} ${school.country}`)}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-4 border-b border-black/5 bg-brand/[0.03] p-6">
+          <img src={school.logo} alt={school.name} className="h-16 w-16 rounded-2xl object-cover" />
+          <div className="flex-1">
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-display text-xl font-bold text-ink">{school.name}</h3>
+              {school.verified && <BadgeCheck className="h-4 w-4 text-brand" />}
+            </div>
+            <div className="mt-1 flex items-center gap-1 text-sm text-ink/50">
+              <MapPin className="h-3.5 w-3.5" /> {school.city}, {school.country}
+            </div>
+            <div className="mt-1 flex items-center gap-3 text-sm">
+              <span className="flex items-center gap-1 font-medium text-amber-500"><Star className="h-4 w-4 fill-amber-400" /> {school.rating}</span>
+              {school.price_from && <span className="text-ink/60">from {school.price_from.toLocaleString()}/-</span>}
+            </div>
+          </div>
+          <button onClick={onClose} className="text-ink/40 hover:text-ink"><X className="h-5 w-5" /></button>
+        </div>
+
+        <div className="space-y-4 p-6">
+          {school.description && <p className="text-sm leading-relaxed text-ink/70">{school.description}</p>}
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            {school.phone && (
+              <a href={`tel:${school.phone}`} className="flex items-center gap-2 rounded-xl bg-black/[0.03] px-4 py-3 text-sm text-ink/70 hover:bg-black/5 hover:text-brand">
+                <Phone className="h-4 w-4 text-brand" /> {school.phone}
+              </a>
+            )}
+            {school.email && (
+              <a href={`mailto:${school.email}`} className="flex items-center gap-2 rounded-xl bg-black/[0.03] px-4 py-3 text-sm text-ink/70 hover:bg-black/5 hover:text-brand">
+                <Mail className="h-4 w-4 text-brand" /> <span className="truncate">{school.email}</span>
+              </a>
+            )}
+            {school.website && (
+              <a href={school.website} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl bg-black/[0.03] px-4 py-3 text-sm text-ink/70 hover:bg-black/5 hover:text-brand">
+                <Globe className="h-4 w-4 text-brand" /> Visit website
+              </a>
+            )}
+            <a href={mapUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl bg-black/[0.03] px-4 py-3 text-sm text-ink/70 hover:bg-black/5 hover:text-brand">
+              <Navigation className="h-4 w-4 text-brand" /> View on map
+            </a>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={onConnect} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand py-3 font-semibold text-white hover:bg-brand-dark">
+              <Send className="h-4 w-4" /> Get connected
+            </button>
+          </div>
+          <Link to="/school" className="block text-center text-xs text-ink/50 hover:text-brand">
+            Own this school? Claim &amp; manage it →
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

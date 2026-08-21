@@ -34,6 +34,32 @@ export default function Games() {
           </div>
         </div>
 
+        {/* Pro 3D — featured */}
+        <Link
+          to="/games/pro"
+          className="group relative mb-5 block overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#0b1220] via-[#111a2e] to-[#0b1220] p-6 shadow-lg transition-all hover:-translate-y-1 hover:shadow-2xl sm:p-8"
+        >
+          <div className="absolute right-4 top-4 rounded-full bg-go/20 px-3 py-1 text-xs font-bold text-go">NEW · 3D</div>
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-4xl">🚗</div>
+            <div className="flex-1">
+              <h3 className="font-display text-2xl font-bold text-white">Pro 3D — Training Ground</h3>
+              <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-white/60">
+                A full 3D driving-school course. Practise the <b className="text-white/80">roundabout, bay parking, lane changes and the 3-point turn</b> with live objectives, a top-right minimap, and three camera views (cockpit · chase · top-down). Drives on your country&rsquo;s correct side.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-white/10 px-3 py-1 text-white/70">4 guided tasks</span>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-white/70">Minimap + 3 views</span>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-white/70">Joystick + pedals</span>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-white/70">Keyboard 1/2/3</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-start rounded-xl bg-go px-5 py-3 font-semibold text-white shadow-lg shadow-go/25 sm:self-center">
+              Drive in 3D <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </div>
+          </div>
+        </Link>
+
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {LESSONS.map((l) => (
             <Link

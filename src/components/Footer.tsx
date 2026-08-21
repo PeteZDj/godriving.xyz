@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download } from 'lucide-react';
+import { Download, Phone } from 'lucide-react';
 import { Logo } from './Logo';
 import { api } from '../lib/api';
 
@@ -51,6 +51,15 @@ export function Footer() {
               <Download className="h-4 w-4" />
               Download Android app
             </a>
+            <a
+              href="https://docall.app/godriving.xyz"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-full border border-white/20 px-5 py-3 text-sm font-semibold text-white/80 hover:border-white/40 hover:text-white"
+            >
+              <Phone className="h-4 w-4" />
+              Call us on docall.app/godriving.xyz
+            </a>
           </div>
           <p className="mt-3 text-xs text-white/40">
             Our React Native build — faster, with Sign Library, quizzes, Sign Match &amp; Road Run.
@@ -73,6 +82,7 @@ export function Footer() {
           <ul className="space-y-2 text-sm">
             <li><Link to="/schools" className="hover:text-white">Driving Schools</Link></li>
             <li><Link to="/partner" className="hover:text-white">Become a Partner</Link></li>
+            <li><Link to="/affiliate" className="hover:text-white">Affiliate Programme</Link></li>
             <li><Link to="/signup" className="hover:text-white">Create Account</Link></li>
           </ul>
         </div>

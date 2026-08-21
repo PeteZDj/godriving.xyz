@@ -5,6 +5,7 @@ import { createEngine } from './engine';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { usePrefs, shouldShowControls, isTouchDevice, vibrate } from '../lib/prefs';
+import { resolveDriveSide } from '../lib/driveSide';
 import { GameSettings } from '../components/GameSettings';
 
 export interface DriveGameConfig {
@@ -57,7 +58,7 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
   const pedalSize: BtnSize = prefs.bigControls ? 'xl' : 'lg';
 
   const [hud, setHud] = useState({ speed: 0, gear: 'N', signalLeft: false, signalRight: false });
-  const [mission, setMission] = useState({ title: '', desc: '', step: '', progress: 0 });
+  const [mission, setMission] = useState({ title: '', desc: '', step: '', progress: 0, info: '' });
   const [scoreBox, setScoreBox] = useState({ score: 0, round: '', best: '' });
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
   const [end, setEnd] = useState<FinishResult | null>(null);
@@ -136,6 +137,8 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
       const eng = engineRef.current;
       if (eng?.audio && eng.audio.muted !== !prefs.sound) eng.audio.toggleMute();
     } catch { /* ignore */ }
+    // Apply the visitor's driving side (Kenya = left) before the lesson lays out the world.
+    try { engineRef.current?.setDrive(resolveDriveSide(prefs.country)); } catch { /* ignore */ }
     setPhase('playing');
     lessonRef.current?.start(difficulty);
   };
@@ -193,6 +196,9 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/20">
             <div className="h-full rounded-full bg-go transition-all" style={{ width: `${mission.progress}%` }} />
           </div>
+          {mission.info && (
+            <div className="mt-2.5 border-t border-white/15 pt-2 text-[11px] leading-relaxed text-white/85" dangerouslySetInnerHTML={{ __html: mission.info }} />
+          )}
         </div>
       )}
 

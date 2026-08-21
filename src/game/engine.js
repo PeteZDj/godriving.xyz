@@ -40,6 +40,12 @@ export function createEngine(container) {
   const HW_CENTER_X = 0;
   const MERGE_ZONE = 200;
 
+  /* Which side of the road traffic keeps to. 'right' (RHT, e.g. USA) or
+   * 'left' (LHT, e.g. Kenya/UK). Set via init({ drive }) / setDrive().
+   * driveSign = +1 for RHT, -1 for LHT — used to mirror traffic & arrows. */
+  let drive = 'right';
+  const driveSign = () => (drive === 'left' ? -1 : 1);
+
   const ROUNDABOUT = { x: 0, y: HW_NORTH_Y - RA_OUTER, outerR: RA_OUTER, innerR: RA_INNER };
   ROUNDABOUT.exits = [
     { id: 4, name: 'South', angle: 90, dir: 's' },
@@ -143,11 +149,13 @@ export function createEngine(container) {
     const sbCount = opts && opts.sbCount != null ? opts.sbCount : 6;
     const speedRange = (opts && opts.speedRange) || [70, 110];
     const spacing = (opts && opts.spacing) || 320;
+    // Northbound (heading up) keeps to the driving side: +X for RHT, -X for LHT.
+    const nbSide = driveSign();
     for (let i = 0; i < nbCount; i++) {
       const lane = i % LANES_PER_DIR;
       const xOff = MEDIAN / 2 + lane * LANE_WIDTH + LANE_WIDTH / 2;
       TRAFFIC.push({
-        x: HW_CENTER_X + xOff, y: HW_SOUTH_Y - 200 - i * spacing,
+        x: HW_CENTER_X + nbSide * xOff, y: HW_SOUTH_Y - 200 - i * spacing,
         heading: -Math.PI / 2,
         speed: speedRange[0] + Math.random() * (speedRange[1] - speedRange[0]),
         color: colors[Math.floor(Math.random() * colors.length)], dir: 'n',
@@ -157,7 +165,7 @@ export function createEngine(container) {
       const lane = i % LANES_PER_DIR;
       const xOff = MEDIAN / 2 + lane * LANE_WIDTH + LANE_WIDTH / 2;
       TRAFFIC.push({
-        x: HW_CENTER_X - xOff, y: HW_NORTH_Y + 100 + i * spacing,
+        x: HW_CENTER_X - nbSide * xOff, y: HW_NORTH_Y + 100 + i * spacing,
         heading: Math.PI / 2,
         speed: speedRange[0] + Math.random() * (speedRange[1] - speedRange[0]),
         color: colors[Math.floor(Math.random() * colors.length)], dir: 's',
@@ -415,7 +423,8 @@ export function createEngine(container) {
     for (let side = -1; side <= 1; side += 2) {
       for (let i = 0; i < LANES_PER_DIR; i++) {
         const x = HW_CENTER_X + side * (MEDIAN / 2 + i * LANE_WIDTH + LANE_WIDTH / 2);
-        const heading = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        // Direction of travel for this side depends on the driving side.
+        const heading = side * driveSign() > 0 ? -Math.PI / 2 : Math.PI / 2;
         for (let y = HW_NORTH_Y + 200; y < HW_SOUTH_Y - 250; y += 500) {
           drawArrow(x, y, heading, '#94a3b8aa');
         }
@@ -494,6 +503,24 @@ export function createEngine(container) {
     ctx.strokeStyle = '#f8fafc';
     ctx.lineWidth = 4 * camera.zoom;
     ctx.beginPath(); ctx.arc(cx, cy, (ROUNDABOUT.outerR - 2) * camera.zoom, 0, TAU); ctx.stroke();
+    // Circulation-direction chevrons: RHT flows counter-clockwise, LHT clockwise.
+    {
+      const circ = drive === 'left' ? 1 : -1;
+      const midR = (ROUNDABOUT.innerR + ROUNDABOUT.outerR) / 2;
+      ctx.fillStyle = 'rgba(148,163,184,0.5)';
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * TAU;
+        const [px, py] = worldToScreen(ROUNDABOUT.x + Math.cos(a) * midR, ROUNDABOUT.y + Math.sin(a) * midR);
+        const tang = Math.atan2(circ * Math.cos(a), -circ * Math.sin(a));
+        const s = 7 * camera.zoom;
+        ctx.save();
+        ctx.translate(px, py); ctx.rotate(tang);
+        ctx.beginPath();
+        ctx.moveTo(-s, -s); ctx.lineTo(s, 0); ctx.lineTo(-s, s);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    }
     for (const ex of ROUNDABOUT.exits) {
       const a = ex.angle * DEG;
       const sx = ROUNDABOUT.x + Math.cos(a) * (ROUNDABOUT.outerR + 70);
@@ -1002,6 +1029,8 @@ export function createEngine(container) {
     setMinimap(el) { mini = el; mctx = el ? el.getContext('2d') : null; },
     setHudCallback(fn) { hudCb = fn; },
     setNotifyCallback(fn) { notifyCb = fn; },
+    setDrive(s) { drive = s === 'left' ? 'left' : 'right'; },
+    get drive() { return drive; },
 
     init(opts = {}) {
       if (!canvas) {
@@ -1017,6 +1046,8 @@ export function createEngine(container) {
         ro.observe(container);
         setupInput({ onReset: () => resetCb && resetCb() });
       }
+
+      if (opts.drive) drive = opts.drive === 'left' ? 'left' : 'right';
 
       if (opts.start) {
         car.x = opts.start.x;
@@ -1049,8 +1080,11 @@ export function createEngine(container) {
     setMission(m) {
       GoDriving._mission = m;
       if (m.markers) m.markers.forEach((mm) => (mm.hit = false));
-      if (missionCb) missionCb({ title: m.title || '', desc: m.desc || '', step: m.step || '', progress: 0 });
+      if (missionCb) missionCb({ title: m.title || '', desc: m.desc || '', step: m.step || '', progress: 0, info: m.info || '' });
     },
+
+    /** Push a live HTML info block into the mission panel (e.g. lane/signal coaching). */
+    setInfo(html) { if (missionCb) missionCb({ info: html || '' }); },
 
     setStart(x, y, heading) {
       car.x = x; car.y = y;

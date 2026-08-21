@@ -24,6 +24,7 @@ interface FeaturedSchool { id: number; name: string; city: string; country: stri
 
 export default function Home() {
   const [word, setWord] = useState(0);
+  const [vlang, setVlang] = useState<'en' | 'sw'>('en');
   const [stats, setStats] = useState({ learners: 0, schools: 18, gamesPlayed: 0 });
   const [schools, setSchools] = useState<FeaturedSchool[]>([]);
 
@@ -105,42 +106,56 @@ export default function Home() {
               </div>
             </motion.div>
 
-            {/* Right visual — floating signs */}
+            {/* Right visual — hero photo + floating sign chips */}
             <motion.div
-              className="relative hidden items-center justify-center md:flex"
+              className="relative hidden md:block"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
             >
-              <div className="absolute h-[360px] w-[360px] rounded-full bg-gradient-to-br from-brand/20 to-go/20 blur-2xl" />
-              <div className="grid grid-cols-3 gap-5">
-                {heroSigns.map((s, i) => (
-                  <motion.div
-                    key={s.id}
-                    className="animate-float rounded-2xl bg-white p-3 shadow-xl shadow-brand/10 ring-1 ring-black/5"
-                    style={{ animationDelay: `${i * 0.4}s` }}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.5 + i * 0.08 }}
-                  >
-                    <Sign sign={s} className="h-24 w-24" />
-                  </motion.div>
-                ))}
+              <div className="relative">
+                <div className="absolute -right-8 -top-8 h-44 w-44 rounded-full bg-brand/10 blur-3xl" />
+                <div className="absolute -bottom-10 -left-10 h-52 w-52 rounded-full bg-go/10 blur-3xl" />
+
+                <div className="relative overflow-hidden rounded-[2rem] border border-black/5 bg-white shadow-2xl shadow-brand/10">
+                  <img
+                    src="/home/hero.png"
+                    alt="A confident new driver behind the wheel"
+                    className="aspect-[4/3] w-full object-cover"
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
+                </div>
+
+                <div className="absolute -left-6 top-10 flex flex-col gap-3">
+                  {heroSigns.slice(0, 2).map((s, i) => (
+                    <motion.div
+                      key={s.id}
+                      className="animate-float rounded-2xl bg-white p-2.5 shadow-xl shadow-brand/10 ring-1 ring-black/5"
+                      style={{ animationDelay: `${i * 0.5}s` }}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.6 + i * 0.1 }}
+                    >
+                      <Sign sign={s} className="h-14 w-14" />
+                    </motion.div>
+                  ))}
+                </div>
+
+                <motion.div
+                  className="absolute -bottom-5 -right-4 flex items-center gap-3 rounded-2xl border border-brand/10 bg-white p-4 shadow-2xl"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 1 }}
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-go text-white">
+                    <Trophy className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-ink/50">Earn XP &amp; climb the</div>
+                    <div className="font-bold text-ink">Leaderboard</div>
+                  </div>
+                </motion.div>
               </div>
-              <motion.div
-                className="absolute -bottom-4 -left-6 flex items-center gap-3 rounded-2xl border border-brand/10 bg-white p-4 shadow-2xl"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1 }}
-              >
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-go text-white">
-                  <Trophy className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-xs text-ink/50">Earn XP & climb the</div>
-                  <div className="font-bold text-ink">Leaderboard</div>
-                </div>
-              </motion.div>
             </motion.div>
           </div>
         </div>
@@ -150,6 +165,46 @@ export default function Home() {
       <div className="h-3 w-full bg-ink">
         <div className="road-dashes mx-auto h-1 translate-y-1" />
       </div>
+
+      {/* ---------- EXPLAINER VIDEO ---------- */}
+      <section className="container mx-auto px-4 py-16">
+        <SectionHead
+          eyebrow="See it in action"
+          title="Learn to drive, the fun way"
+          sub="A 30-second look at how GoDriving takes you from your phone to your licence."
+        />
+        <div className="mx-auto mt-8 max-w-3xl">
+          <div className="mb-3 flex justify-center">
+            <div className="inline-flex rounded-full bg-black/5 p-1">
+              {(['en', 'sw'] as const).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setVlang(l)}
+                  className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
+                    vlang === l ? 'bg-brand text-white shadow-sm' : 'text-ink/60 hover:text-brand'
+                  }`}
+                >
+                  {l === 'en' ? 'English' : 'Kiswahili'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-3xl border border-black/5 bg-black shadow-2xl shadow-brand/10">
+            <video
+              key={vlang}
+              className="aspect-video w-full"
+              controls
+              playsInline
+              preload="metadata"
+              poster="/home/hero.png"
+              src={vlang === 'sw' ? '/home/godriving-explainer-sw.mp4' : '/home/godriving-explainer.mp4'}
+            />
+          </div>
+          <p className="mt-2 text-center text-xs text-ink/40">
+            {vlang === 'sw' ? 'Toleo la Kiswahili — mtindo wa jiji la Nairobi' : 'English edition'}
+          </p>
+        </div>
+      </section>
 
       {/* ---------- FEATURES ---------- */}
       <section className="container mx-auto px-4 py-20">
@@ -173,6 +228,43 @@ export default function Home() {
               <p className="text-sm leading-relaxed text-ink/60">{f.text}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ---------- LIFESTYLE BAND ---------- */}
+      <section className="container mx-auto px-4 pb-4">
+        <div className="grid items-center gap-10 rounded-3xl border border-black/5 bg-white p-6 shadow-sm md:grid-cols-2 md:p-10">
+          <div className="relative order-2 md:order-1">
+            <div className="overflow-hidden rounded-3xl border border-black/5 shadow-xl">
+              <img src="/home/learn.png" alt="Learning road signs on the GoDriving app" className="aspect-[3/2] w-full object-cover" />
+            </div>
+            <div className="absolute -bottom-4 -right-4 flex items-center gap-2 rounded-2xl bg-brand px-4 py-3 text-white shadow-lg">
+              <Sparkles className="h-5 w-5" />
+              <span className="text-sm font-semibold">Fun beats fear</span>
+            </div>
+          </div>
+          <div className="order-1 md:order-2">
+            <div className="mb-3 text-sm font-semibold uppercase tracking-wider text-go">Your pocket instructor</div>
+            <h2 className="mb-4 font-display text-3xl font-bold text-ink">From nervous beginner to confident driver</h2>
+            <p className="mb-6 text-ink/60">
+              No thick textbooks, no boring theory. Play quick games on your phone, learn every road sign and
+              rule, and build real confidence before you ever touch a steering wheel.
+            </p>
+            <ul className="space-y-3">
+              {[
+                'Bite-sized lessons you can finish on a matatu ride',
+                'Real highway-code questions with instant feedback',
+                'Track exactly where you are test-ready',
+              ].map((t) => (
+                <li key={t} className="flex items-start gap-3 text-ink/80">
+                  <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-go/15 text-go-dark">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                  </span>
+                  {t}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </section>
 
@@ -255,7 +347,19 @@ export default function Home() {
       <section className="bg-gradient-to-b from-brand/5 to-white py-20">
         <div className="container mx-auto px-4">
           <SectionHead eyebrow="Our Network" title="Then finish at a real driving school" sub="When you're test-ready, get matched with a verified school near you — across Kenya and beyond." />
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+
+          <div className="mx-auto mt-10 max-w-4xl overflow-hidden rounded-3xl border border-black/5 shadow-xl">
+            <div className="relative">
+              <img src="/home/instructor.png" alt="A driving instructor teaching a learner" className="aspect-[16/7] w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/25 to-transparent" />
+              <div className="absolute inset-y-0 left-0 flex max-w-sm flex-col justify-center gap-2 p-6 text-white sm:p-10">
+                <div className="text-xl font-bold">Verified instructors, real cars</div>
+                <p className="text-sm text-white/85">We only connect you with schools our team has checked — so your first lesson behind the wheel is in safe hands.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {(schools.length ? schools : Array.from({ length: 4 })).map((s: any, i) => (
               s && s.id ? (
                 <Link key={s.id} to="/schools" className="flex items-center gap-3 rounded-2xl border border-black/5 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg">

@@ -141,6 +141,10 @@ async function initDb() {
   await q(`ALTER TABLE driving_schools ADD COLUMN IF NOT EXISTS latitude REAL`);
   await q(`ALTER TABLE driving_schools ADD COLUMN IF NOT EXISTS longitude REAL`);
 
+  // School-partner portal: let a user own/manage a school and keep notes on leads
+  await q(`ALTER TABLE driving_schools ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL`);
+  await q(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS notes TEXT`);
+
   await ensureSchools();
 }
 
@@ -463,6 +467,122 @@ app.post('/api/leads', wrap(async (req, res) => {
     [school_id, user_id || null, name, email, phone || null, message || null]
   );
   res.json({ ok: true, id: rows[0].id, message: 'Request sent! The school will reach out to you soon.' });
+}));
+
+// ---------------- School partner portal ----------------
+// A school user can claim/register one driving school and manage the students
+// (leads) who requested to connect with them.
+async function schoolForOwner(userId) {
+  const { rows } = await q(
+    'SELECT * FROM driving_schools WHERE owner_user_id=$1 ORDER BY id ASC LIMIT 1',
+    [userId]
+  );
+  return rows[0] || null;
+}
+
+// The school owned/managed by the signed-in user (null if none yet)
+app.get('/api/school/me', auth, wrap(async (req, res) => {
+  res.json({ school: await schoolForOwner(req.user.id) });
+}));
+
+// Unclaimed schools the user can take ownership of (claim picker)
+app.get('/api/school/claimable', auth, wrap(async (req, res) => {
+  const search = req.query.q ? `%${req.query.q}%` : '%';
+  const { rows } = await q(
+    `SELECT id, name, city, country, logo, verified FROM driving_schools
+      WHERE owner_user_id IS NULL AND (name ILIKE $1 OR city ILIKE $1)
+      ORDER BY featured DESC, name ASC LIMIT 25`,
+    [search]
+  );
+  res.json({ schools: rows });
+}));
+
+// Claim an existing (unclaimed) school
+app.post('/api/school/claim', auth, wrap(async (req, res) => {
+  const schoolId = parseInt(req.body?.school_id, 10);
+  if (!schoolId) return res.status(400).json({ error: 'school_id is required' });
+  const existingOwned = await schoolForOwner(req.user.id);
+  if (existingOwned) return res.status(409).json({ error: 'You already manage a school.' });
+  const { rows } = await q('SELECT * FROM driving_schools WHERE id=$1', [schoolId]);
+  if (!rows.length) return res.status(404).json({ error: 'School not found' });
+  if (rows[0].owner_user_id && rows[0].owner_user_id !== req.user.id)
+    return res.status(409).json({ error: 'This school has already been claimed. Contact support to transfer it.' });
+  const upd = await q('UPDATE driving_schools SET owner_user_id=$1 WHERE id=$2 RETURNING *', [req.user.id, schoolId]);
+  await q(`UPDATE users SET role='school' WHERE id=$1 AND role <> 'school'`, [req.user.id]);
+  res.json({ school: upd.rows[0] });
+}));
+
+// Register + own a brand new school
+app.post('/api/school/register', auth, wrap(async (req, res) => {
+  const { name, country, city, description, phone, email, website, price_from } = req.body || {};
+  if (!name || !city) return res.status(400).json({ error: 'School name and city are required' });
+  if (await schoolForOwner(req.user.id)) return res.status(409).json({ error: 'You already manage a school.' });
+  const logo = `https://placehold.co/160x160/0071BC/ffffff?text=${encodeURIComponent(String(name).split(' ')[0])}`;
+  const { rows } = await q(
+    `INSERT INTO driving_schools (name, country, city, description, phone, email, website, price_from, verified, logo, owner_user_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,FALSE,$9,$10) RETURNING *`,
+    [name, country || 'Kenya', city, description || null, phone || null, email || null, website || null,
+     price_from || null, logo, req.user.id]
+  );
+  await q(`UPDATE users SET role='school' WHERE id=$1 AND role <> 'school'`, [req.user.id]);
+  res.json({ school: rows[0] });
+}));
+
+// Update the owned school's public profile
+app.patch('/api/school/me', auth, wrap(async (req, res) => {
+  const school = await schoolForOwner(req.user.id);
+  if (!school) return res.status(404).json({ error: 'No school to manage' });
+  const f = req.body || {};
+  const upd = await q(
+    `UPDATE driving_schools SET
+       description = COALESCE($2, description),
+       phone       = COALESCE($3, phone),
+       email       = COALESCE($4, email),
+       website     = COALESCE($5, website),
+       price_from  = COALESCE($6, price_from),
+       city        = COALESCE($7, city),
+       country     = COALESCE($8, country)
+     WHERE id=$1 RETURNING *`,
+    [school.id, f.description ?? null, f.phone ?? null, f.email ?? null, f.website ?? null,
+     f.price_from ?? null, f.city ?? null, f.country ?? null]
+  );
+  res.json({ school: upd.rows[0] });
+}));
+
+// Students (leads) for the owned school + status breakdown
+app.get('/api/school/students', auth, wrap(async (req, res) => {
+  const school = await schoolForOwner(req.user.id);
+  if (!school) return res.status(404).json({ error: 'No school to manage' });
+  const { rows } = await q(
+    `SELECT l.id, l.name, l.email, l.phone, l.message, l.status, l.notes, l.created_at,
+            u.xp, u.level, u.city AS user_city
+       FROM leads l LEFT JOIN users u ON u.id = l.user_id
+      WHERE l.school_id=$1
+      ORDER BY l.created_at DESC`,
+    [school.id]
+  );
+  const stats = await q(
+    `SELECT status, COUNT(*)::int AS c FROM leads WHERE school_id=$1 GROUP BY status`,
+    [school.id]
+  );
+  res.json({ school, students: rows, stats: stats.rows });
+}));
+
+// Update a student/lead (status + notes)
+app.patch('/api/school/students/:id', auth, wrap(async (req, res) => {
+  const school = await schoolForOwner(req.user.id);
+  if (!school) return res.status(404).json({ error: 'No school to manage' });
+  const id = parseInt(req.params.id, 10);
+  const { status, notes } = req.body || {};
+  const allowed = ['new', 'contacted', 'enrolled', 'archived'];
+  const safeStatus = allowed.includes(status) ? status : null;
+  const { rows } = await q(
+    `UPDATE leads SET status = COALESCE($3, status), notes = COALESCE($4, notes)
+      WHERE id=$1 AND school_id=$2 RETURNING *`,
+    [id, school.id, safeStatus, notes ?? null]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Student not found' });
+  res.json({ student: rows[0] });
 }));
 
 // Newsletter

@@ -50,6 +50,9 @@ export default function RootLayout() {
             <Stack.Screen name="game/match" />
             <Stack.Screen name="game/quiz" />
             <Stack.Screen name="game/roadrun" />
+            <Stack.Screen name="game/drive" options={{ animation: 'fade' }} />
+            <Stack.Screen name="game/drive3d" options={{ animation: 'fade' }} />
+
             <Stack.Screen name="partner" />
             <Stack.Screen name="downloads" />
             <Stack.Screen name="login" options={{ presentation: 'modal' }} />

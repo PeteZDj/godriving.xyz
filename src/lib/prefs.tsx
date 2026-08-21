@@ -12,9 +12,11 @@ export interface Prefs {
   sound: boolean;
   /** Bigger, easier-to-hit on-screen buttons. */
   bigControls: boolean;
+  /** Country used to decide which side of the road you drive on. "auto" = detect. */
+  country: string;
 }
 
-const DEFAULT: Prefs = { controls: 'auto', haptics: true, sound: true, bigControls: false };
+const DEFAULT: Prefs = { controls: 'auto', haptics: true, sound: true, bigControls: false, country: 'auto' };
 const KEY = 'godriving_prefs';
 
 function load(): Prefs {

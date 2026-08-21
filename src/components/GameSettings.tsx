@@ -1,5 +1,6 @@
-import { Gamepad2, Vibrate, Volume2, Maximize2 } from 'lucide-react';
+import { Gamepad2, Vibrate, Volume2, Maximize2, Navigation } from 'lucide-react';
 import { usePrefs, ControlsMode, isTouchDevice } from '../lib/prefs';
+import { COUNTRY_OPTIONS, resolveDriveSide, sideLabel } from '../lib/driveSide';
 
 const CONTROL_OPTIONS: { id: ControlsMode; label: string; hint: string }[] = [
   { id: 'auto', label: 'Auto', hint: 'Show on touch devices' },
@@ -9,9 +10,31 @@ const CONTROL_OPTIONS: { id: ControlsMode; label: string; hint: string }[] = [
 
 export function GameSettings({ compact = false }: { compact?: boolean }) {
   const { prefs, setPref } = usePrefs();
+  const side = resolveDriveSide(prefs.country);
 
   return (
     <div className={compact ? 'space-y-4' : 'space-y-6'}>
+      {/* Driving side / country */}
+      <div>
+        <div className="mb-2 flex items-center gap-2">
+          <Navigation className="h-4 w-4 text-brand" />
+          <span className="text-sm font-semibold text-ink">Driving side</span>
+        </div>
+        <select
+          value={prefs.country}
+          onChange={(e) => setPref('country', e.target.value)}
+          className="w-full rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2.5 text-sm font-medium text-ink outline-none focus:border-brand"
+        >
+          {COUNTRY_OPTIONS.map((c) => (
+            <option key={c.code} value={c.code}>{c.name}</option>
+          ))}
+        </select>
+        <p className="mt-2 text-xs text-ink/50">
+          Roads adapt to where you drive — you currently <b className="text-ink/70">{sideLabel(side)}</b>.
+          {prefs.country === 'auto' && ' (auto-detected)'}
+        </p>
+      </div>
+
       {/* On-screen controls */}
       <div>
         <div className="mb-2 flex items-center gap-2">
