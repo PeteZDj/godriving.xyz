@@ -581,12 +581,12 @@ export function Pro3DGame() {
   ];
 
   return (
-    <div className="fixed inset-0 z-[60] overflow-hidden bg-[#8fc6f2] select-none">
+    <div className="fixed inset-0 z-[60] h-[100dvh] overflow-hidden bg-[#8fc6f2] select-none">
       <div ref={mountRef} className="absolute inset-0" />
 
       {/* Top bar */}
-      <div className="absolute left-0 right-0 top-0 z-30 flex items-start justify-between p-3">
-        <div className="flex flex-col items-start gap-2">
+      <div className="absolute left-0 right-0 top-0 z-30 flex items-start justify-between gap-2 p-3">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
           <Link to="/games" className="flex items-center gap-1.5 rounded-full bg-black/50 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-black/70">
             <ArrowLeft className="h-4 w-4" /> Exit
           </Link>
@@ -598,7 +598,7 @@ export function Pro3DGame() {
               <ChevronDown className={`h-4 w-4 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
             </button>
             {menuOpen && (
-              <div className="absolute mt-2 w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#0b1220]/95 shadow-2xl backdrop-blur">
+              <div className="absolute mt-2 w-[min(16rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-white/10 bg-[#0b1220]/95 shadow-2xl backdrop-blur">
                 {MISSION_META.map((m, i) => (
                   <button key={m.id} onClick={() => pickMission(i)} className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${i === missionIdx ? 'bg-go/20' : 'hover:bg-white/5'}`}>
                     <span className="text-xl">{m.emoji}</span>
@@ -615,7 +615,7 @@ export function Pro3DGame() {
 
           {/* Objective card */}
           {mission.id !== 'free' && (
-            <div className="w-64 rounded-2xl border border-white/10 bg-black/55 p-3 text-white backdrop-blur">
+            <div className="w-full max-w-64 rounded-2xl border border-white/10 bg-black/55 p-3 text-white backdrop-blur">
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-go">Objective</span>
                 {mission.done && <span className="flex items-center gap-1 text-xs font-bold text-go"><Trophy className="h-3.5 w-3.5" /> Done</span>}
@@ -637,14 +637,14 @@ export function Pro3DGame() {
             </div>
           )}
           {mission.id === 'free' && (
-            <div className="w-60 rounded-2xl border border-white/10 bg-black/50 p-3 text-[12px] leading-snug text-white/80 backdrop-blur">
+            <div className="w-full max-w-60 rounded-2xl border border-white/10 bg-black/50 p-3 text-[12px] leading-snug text-white/80 backdrop-blur">
               {INTRO.free}
             </div>
           )}
         </div>
 
         {/* Right: minimap + view switch */}
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex shrink-0 flex-col items-end gap-2">
           <div className="flex items-center gap-2">
             <div className="rounded-full bg-black/50 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur">✓ {tasksDone}/4</div>
             <button onClick={toggleMute} className="rounded-full bg-black/50 p-2 text-white backdrop-blur hover:bg-black/70" aria-label="Mute">
@@ -652,7 +652,7 @@ export function Pro3DGame() {
             </button>
           </div>
           <div className="overflow-hidden rounded-xl border border-white/15 bg-black/40 backdrop-blur">
-            <canvas ref={miniRef} width={168} height={150} className="block" />
+            <canvas ref={miniRef} width={168} height={150} className="block h-[5.9rem] w-[6.6rem] sm:h-[150px] sm:w-[168px]" />
           </div>
           {/* View switcher (keyboard 1/2/3 also work) */}
           <div className="flex overflow-hidden rounded-xl border border-white/15 bg-black/50 backdrop-blur">
@@ -666,7 +666,7 @@ export function Pro3DGame() {
       </div>
 
       {/* Speedometer */}
-      <div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-2xl bg-black/55 px-6 py-2 text-center text-white backdrop-blur">
+      <div className="absolute bottom-[11.5rem] left-1/2 z-20 -translate-x-1/2 rounded-2xl bg-black/55 px-4 py-1.5 text-center text-white backdrop-blur sm:bottom-3 sm:px-6 sm:py-2">
         <div className="flex items-end gap-1">
           <span className="font-display text-3xl font-bold leading-none">{hud.speed}</span>
           <span className="mb-0.5 text-xs text-white/60">km/h</span>
@@ -685,8 +685,8 @@ export function Pro3DGame() {
       {/* Touch controls */}
       {showTouch && (
         <>
-          <div className="absolute bottom-6 left-5 z-20"><Joystick big={prefs.bigControls} onChange={setSteerTouch} /></div>
-          <div className="absolute bottom-6 right-5 z-20 flex items-end gap-3">
+          <div className="absolute bottom-6 left-5 z-20" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}><Joystick big={prefs.bigControls} onChange={setSteerTouch} /></div>
+          <div className="absolute bottom-6 right-5 z-20 flex items-end gap-3" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
             <PedalBtn label="BRAKE" tone="brake" big={prefs.bigControls} onDown={() => pedal('brake', true)} onUp={() => pedal('brake', false)} />
             <PedalBtn label="GAS" tone="gas" big={prefs.bigControls} onDown={() => pedal('throttle', true)} onUp={() => pedal('throttle', false)} />
           </div>

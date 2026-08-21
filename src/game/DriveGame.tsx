@@ -162,7 +162,7 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] overflow-hidden bg-[#3a7d3a] select-none">
+    <div className="fixed inset-0 z-[60] h-[100dvh] overflow-hidden bg-[#3a7d3a] select-none">
       <div ref={containerRef} className="absolute inset-0" />
 
       {/* Top bar */}
@@ -189,7 +189,7 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
 
       {/* Mission panel */}
       {phase === 'playing' && mission.title && (
-        <div className="absolute left-3 top-16 z-20 max-w-xs rounded-2xl bg-black/55 p-4 text-white backdrop-blur">
+        <div className="absolute left-3 top-16 z-20 right-[7.25rem] max-w-xs rounded-2xl bg-black/55 p-3 text-white backdrop-blur sm:right-auto sm:p-4">
           {mission.step && <div className="mb-1 text-xs text-white/70" dangerouslySetInnerHTML={{ __html: mission.step }} />}
           <div className="font-display text-base font-bold">{mission.title}</div>
           {mission.desc && <div className="mt-1 text-xs leading-snug text-white/70">{mission.desc}</div>}
@@ -204,12 +204,12 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
 
       {/* Minimap */}
       <div className={`absolute right-3 top-16 z-20 rounded-2xl bg-black/40 p-1.5 backdrop-blur ${phase === 'playing' ? '' : 'hidden'}`}>
-        <canvas ref={miniRef} width={150} height={150} className="rounded-xl" />
+        <canvas ref={miniRef} width={150} height={150} className="h-24 w-24 rounded-xl sm:h-[150px] sm:w-[150px]" />
       </div>
 
       {/* Speedometer */}
       {phase === 'playing' && (
-        <div className="absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-2xl bg-black/55 px-6 py-2 text-center text-white backdrop-blur">
+        <div className="absolute bottom-[8.5rem] left-1/2 z-20 -translate-x-1/2 rounded-2xl bg-black/55 px-5 py-1.5 text-center text-white backdrop-blur sm:bottom-3 sm:px-6 sm:py-2">
           <div className="flex items-end gap-1">
             <span className="font-display text-3xl font-bold leading-none">{hud.speed}</span>
             <span className="mb-0.5 text-xs text-white/60">km/h</span>
@@ -224,7 +224,7 @@ export function DriveGame({ config }: { config: DriveGameConfig }) {
 
       {/* Touch controls — two-thumb driving layout */}
       {phase === 'playing' && showTouch && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex items-end justify-between gap-3 px-4">
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex items-end justify-between gap-3 px-4" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           {/* Steering — left thumb */}
           <div className="flex items-end gap-2.5">
             <TouchBtn label="◀" size={steerSize} onDown={() => hold('KeyA', true)} onUp={() => hold('KeyA', false)} />
