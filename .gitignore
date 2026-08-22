@@ -1,7 +1,13 @@
 node_modules/
 build/
 dist/
-data/
+# Anchored to the repo root on purpose. A bare `data/` matches a directory of
+# that name at ANY depth, which silently excluded src/data/ and
+# godriving-rn/src/data/ - the road sign dataset and the mobile app's API
+# layer. The repo would not build from a clean clone and those files existed
+# only on the server's disk. No root-level data/ directory exists, so anchoring
+# costs nothing.
+/data/
 *.db
 *.db-wal
 *.db-shm
