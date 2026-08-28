@@ -35,3 +35,11 @@ Desktop.ini
 # Keep the shippable APK tracked even though bin/ is ignored
 !public/downloads/godriving.apk
 config.bat
+
+.env
+*.bak
+*.bak-*
+*.tmp-*
+*-backup-*.sql
+*.db.bak-*
+.env.local.bak-*

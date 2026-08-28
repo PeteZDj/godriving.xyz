@@ -32,7 +32,11 @@ const gClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({
+  limit: '2mb',
+  // Paystack signs the RAW bytes; keep a copy before parsing.
+  verify: (req, _res, buf) => { req.rawBody = buf; }
+}));
 
 const pool = new Pool({
   connectionString:
@@ -40,6 +44,17 @@ const pool = new Pool({
     'postgresql://godriving:GoDrive2025Pg!@localhost:5432/godriving',
   max: 10,
 });
+
+import paystack from '../_lib/paystack/index.mjs';
+import {
+  initBillingDb, mountBilling, sessionsToday, FREE_SESSIONS_PER_DAY
+} from './billing.js';
+import affiliate from '../_lib/affiliate/index.mjs';
+
+// Paystack credentials are shared server-wide; see _lib/paystack.
+paystack.loadSharedEnv();
+
+const BASE_URL = (process.env.SITE_URL || 'https://godriving.xyz').replace(/\/$/, '');
 
 const q = (sql, params) => pool.query(sql, params);
 
@@ -370,6 +385,21 @@ app.post('/api/scores', auth, wrap(async (req, res) => {
   const uid = req.user.id;
   let { game, score, accuracy, meta } = req.body || {};
   if (!game) return res.status(400).json({ error: 'game is required' });
+
+  // Free accounts get a daily practice allowance; full access removes it.
+  // Checked here because this is the endpoint that records a finished session,
+  // so it is the one place the limit cannot be skipped by the client.
+  if (!req.user.has_full_access) {
+    const used = await sessionsToday(q, uid);
+    if (used >= FREE_SESSIONS_PER_DAY) {
+      return res.status(402).json({
+        error: `You've used your ${FREE_SESSIONS_PER_DAY} free practice sessions for today. Unlock full access for unlimited practice.`,
+        sessions_used_today: used,
+        free_sessions_per_day: FREE_SESSIONS_PER_DAY,
+        buy_url: '/pricing'
+      });
+    }
+  }
   score = Math.max(0, Math.min(1000000, parseInt(score, 10) || 0));
   const acc = accuracy == null ? null : Math.max(0, Math.min(100, Number(accuracy)));
 
@@ -608,10 +638,14 @@ app.get('/api/stats', wrap(async (req, res) => {
 async function start() {
   try {
     await initDb();
+    await initBillingDb(q);
+    await affiliate.initAffiliateDb(q, { userIdType: 'INTEGER' });
     console.log('Database ready');
   } catch (e) {
     console.error('DB init failed:', e.message);
   }
+  mountBilling(app, { q, wrap, auth, baseUrl: BASE_URL });
+  affiliate.mountAffiliate(app, { q, wrap, auth, site: 'godriving', baseUrl: BASE_URL });
   app.listen(PORT, () => console.log(`GoDriving API listening on http://localhost:${PORT}`));
 }
 
