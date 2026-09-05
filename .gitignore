@@ -17,7 +17,6 @@ npm-debug.log*
 Thumbs.db
 Desktop.ini
 .cursor/
-.vscode/
 *.local
 *.swp
 *.swo
@@ -36,7 +35,6 @@ Desktop.ini
 !public/downloads/godriving.apk
 config.bat
 
-.env
 *.bak
 *.bak-*
 *.tmp-*
