@@ -5,11 +5,11 @@
   "description": "GoDriving.xyz - Learn to drive through games. Partnering with driving schools across Africa and beyond.",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node api.js && vite",
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server.js",
-    "start": "node server.js"
+    "start": "node api.js && node server.js"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
